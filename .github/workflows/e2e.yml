@@ -1,11 +1,11 @@
 name: E2E
 
 on:
+  # CI trim: pushes to selfhost/integration no longer rerun Playwright; it already ran
+  # on the pull request that produced the commit (required checks are PR-only).
   push:
     branches:
       - main
-      - selfhost
-      - integration
     paths:
       - "src/**"
       - "tests/e2e/**"
