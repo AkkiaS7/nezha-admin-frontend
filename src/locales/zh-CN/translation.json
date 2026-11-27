@@ -586,5 +586,61 @@
             "Failed": "最近一次恢复失败：{{name}}",
             "Dismiss": "关闭"
         }
+    },
+    "Database": {
+        "Tab": "数据库",
+        "Title": "数据库",
+        "Description": "查看 SQLite 数据库占用，清理较早的服务监控历史，以减小数据库和备份体积、缩短恢复耗时。",
+        "Unsupported": "当前面板版本不支持数据库管理，请升级面板后使用。",
+        "Unknown": "未知",
+        "HistoryUnavailable": "服务监控历史没有存放在 SQLite 中（例如已启用 TSDB），无法在这里清理，其保留期由 TSDB 设置管理。",
+        "Usage": {
+            "Title": "数据库占用",
+            "Size": "数据库占用",
+            "FreePages": "现在压缩可回收",
+            "HistoryRows": "服务历史记录数",
+            "OldestRecord": "最早记录",
+            "DiskFree": "磁盘剩余空间"
+        },
+        "Cleanup": {
+            "Title": "清理服务监控历史",
+            "Description": "删除超出保留期的逐服务器服务历史，以及已删除服务的历史。30 天状态条使用的 15 分钟汇总始终至少保留 30 天。",
+            "Retention": "保留天数",
+            "Days": "{{days}} 天",
+            "Custom": "自定义",
+            "CustomDays": "天数（{{min}}–{{max}}）",
+            "InvalidDays": "请输入 {{min}} 到 {{max}} 之间的整数天数。",
+            "ShortRetention": "保留少于 30 天时，7 天和 30 天图表将不完整；30 天状态条不受影响。",
+            "Estimating": "正在计算可释放的空间…",
+            "NothingToClean": "没有可清理的记录。",
+            "Estimate": "将删除约 {{rows}} 条记录，预计释放约 {{size}}。",
+            "Approximate": "（记录数为近似值）",
+            "Vacuum": "清理后立即压缩数据库（VACUUM）",
+            "VacuumHint": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失；需要约 {{required}} 临时磁盘空间（当前剩余 {{free}}）。",
+            "VacuumNoSpace": "磁盘空间不足，无法压缩：需要约 {{required}}，当前剩余 {{free}}。将只删除记录。",
+            "Run": "清理",
+            "Deleting": "删除中…",
+            "Vacuuming": "压缩中…",
+            "Started": "已开始清理",
+            "Finished": "清理完成",
+            "Failed": "清理失败"
+        },
+        "Confirm": {
+            "Title": "确定清理服务监控历史？",
+            "WithVacuum": "清理后压缩数据库",
+            "WithoutVacuum": "不压缩数据库",
+            "Next": "继续",
+            "FinalTitle": "再次确认",
+            "Irreversible": "删除的历史无法恢复。如果以后可能用到，请先备份数据库。",
+            "VacuumLock": "压缩期间数据库被锁定，期间写入的监控数据可能丢失。",
+            "GoBackup": "前往备份",
+            "Run": "删除历史"
+        },
+        "Result": {
+            "Succeeded": "上次清理删除了 {{rows}} 条记录，释放了 {{size}}。",
+            "Failed": "上次清理在删除 {{rows}} 条记录后失败，可以重新执行。",
+            "VacuumNoSpace": "磁盘空间不足，已跳过压缩。",
+            "VacuumNotRequested": "未选择压缩，文件大小没有变化。"
+        }
     }
 }

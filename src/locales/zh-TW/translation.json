@@ -562,5 +562,61 @@
             "Failed": "最近一次還原失敗：{{name}}",
             "Dismiss": "關閉"
         }
+    },
+    "Database": {
+        "Tab": "資料庫",
+        "Title": "資料庫",
+        "Description": "檢視 SQLite 資料庫佔用，清理較早的服務監控歷史，以減小資料庫和備份體積、縮短還原耗時。",
+        "Unsupported": "目前面板版本不支援資料庫管理，請升級面板後使用。",
+        "Unknown": "未知",
+        "HistoryUnavailable": "服務監控歷史沒有存放在 SQLite 中（例如已啟用 TSDB），無法在這裡清理，其保留期由 TSDB 設定管理。",
+        "Usage": {
+            "Title": "資料庫佔用",
+            "Size": "資料庫佔用",
+            "FreePages": "現在壓縮可回收",
+            "HistoryRows": "服務歷史記錄數",
+            "OldestRecord": "最早記錄",
+            "DiskFree": "磁碟剩餘空間"
+        },
+        "Cleanup": {
+            "Title": "清理服務監控歷史",
+            "Description": "刪除超出保留期的逐伺服器服務歷史，以及已刪除服務的歷史。30 天狀態列使用的 15 分鐘彙總始終至少保留 30 天。",
+            "Retention": "保留天數",
+            "Days": "{{days}} 天",
+            "Custom": "自訂",
+            "CustomDays": "天數（{{min}}–{{max}}）",
+            "InvalidDays": "請輸入 {{min}} 到 {{max}} 之間的整數天數。",
+            "ShortRetention": "保留少於 30 天時，7 天和 30 天圖表將不完整；30 天狀態列不受影響。",
+            "Estimating": "正在計算可釋放的空間…",
+            "NothingToClean": "沒有可清理的記錄。",
+            "Estimate": "將刪除約 {{rows}} 筆記錄，預計釋放約 {{size}}。",
+            "Approximate": "（記錄數為近似值）",
+            "Vacuum": "清理後立即壓縮資料庫（VACUUM）",
+            "VacuumHint": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失；需要約 {{required}} 暫存磁碟空間（目前剩餘 {{free}}）。",
+            "VacuumNoSpace": "磁碟空間不足，無法壓縮：需要約 {{required}}，目前剩餘 {{free}}。將只刪除記錄。",
+            "Run": "清理",
+            "Deleting": "刪除中…",
+            "Vacuuming": "壓縮中…",
+            "Started": "已開始清理",
+            "Finished": "清理完成",
+            "Failed": "清理失敗"
+        },
+        "Confirm": {
+            "Title": "確定清理服務監控歷史？",
+            "WithVacuum": "清理後壓縮資料庫",
+            "WithoutVacuum": "不壓縮資料庫",
+            "Next": "繼續",
+            "FinalTitle": "再次確認",
+            "Irreversible": "刪除的歷史無法復原。如果以後可能用到，請先備份資料庫。",
+            "VacuumLock": "壓縮期間資料庫被鎖定，期間寫入的監控資料可能遺失。",
+            "GoBackup": "前往備份",
+            "Run": "刪除歷史"
+        },
+        "Result": {
+            "Succeeded": "上次清理刪除了 {{rows}} 筆記錄，釋放了 {{size}}。",
+            "Failed": "上次清理在刪除 {{rows}} 筆記錄後失敗，可以重新執行。",
+            "VacuumNoSpace": "磁碟空間不足，已略過壓縮。",
+            "VacuumNotRequested": "未選擇壓縮，檔案大小沒有變化。"
+        }
     }
 }

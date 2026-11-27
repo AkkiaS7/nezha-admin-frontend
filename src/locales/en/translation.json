@@ -586,5 +586,61 @@
             "Failed": "Last restore failed: {{name}}",
             "Dismiss": "Dismiss"
         }
+    },
+    "Database": {
+        "Tab": "Database",
+        "Title": "Database",
+        "Description": "View the SQLite database size and clean up old service monitoring history to reduce the database, backup size and restore time.",
+        "Unsupported": "This dashboard version does not support database management. Upgrade the dashboard to use this page.",
+        "Unknown": "Unknown",
+        "HistoryUnavailable": "Service monitoring history is not stored in SQLite (for example, TSDB is enabled), so it cannot be cleaned up here. Its retention is managed by the TSDB settings.",
+        "Usage": {
+            "Title": "Database usage",
+            "Size": "Database size",
+            "FreePages": "Reclaimable by compaction now",
+            "HistoryRows": "Service history records",
+            "OldestRecord": "Oldest record",
+            "DiskFree": "Free disk space"
+        },
+        "Cleanup": {
+            "Title": "Clean up service monitoring history",
+            "Description": "Deletes per-server service history older than the retention period, and history of deleted services. The 15-minute summaries behind the 30-day status bar are always kept for at least 30 days.",
+            "Retention": "Keep history for",
+            "Days": "{{days}} days",
+            "Custom": "Custom",
+            "CustomDays": "Days ({{min}}–{{max}})",
+            "InvalidDays": "Enter a whole number of days from {{min}} to {{max}}.",
+            "ShortRetention": "Keeping less than 30 days leaves the 7-day and 30-day charts incomplete. The 30-day status bar is not affected.",
+            "Estimating": "Calculating the space to free…",
+            "NothingToClean": "There are no records to clean up.",
+            "Estimate": "About {{rows}} records will be deleted, freeing about {{size}}.",
+            "Approximate": "(record count is approximate)",
+            "Vacuum": "Compact the database after cleanup (VACUUM)",
+            "VacuumHint": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost. It needs about {{required}} of temporary disk space (currently free: {{free}}).",
+            "VacuumNoSpace": "Not enough disk space to compact: about {{required}} is needed, {{free}} is free. Only the records will be deleted.",
+            "Run": "Clean up",
+            "Deleting": "Deleting…",
+            "Vacuuming": "Compacting…",
+            "Started": "Cleanup started",
+            "Finished": "Cleanup finished",
+            "Failed": "Cleanup failed"
+        },
+        "Confirm": {
+            "Title": "Clean up service monitoring history?",
+            "WithVacuum": "Compact the database afterwards",
+            "WithoutVacuum": "Do not compact the database",
+            "Next": "Continue",
+            "FinalTitle": "Confirm again",
+            "Irreversible": "Deleted history cannot be recovered. Back up the database first if you may need it.",
+            "VacuumLock": "While compacting, the database is locked and monitoring data written meanwhile may be lost.",
+            "GoBackup": "Go to backups",
+            "Run": "Delete history"
+        },
+        "Result": {
+            "Succeeded": "Last cleanup deleted {{rows}} records and freed {{size}}.",
+            "Failed": "Last cleanup failed after deleting {{rows}} records. You can run it again.",
+            "VacuumNoSpace": "Compaction was skipped because of insufficient disk space.",
+            "VacuumNotRequested": "Compaction was not requested, so the file size did not change."
+        }
     }
 }
