@@ -146,11 +146,14 @@ test("30 days is the default and the cleanup runs only after two confirmations",
     renderPage()
     expect((screen.getByDisplayValue("30") as HTMLInputElement).checked).toBe(true)
     expect(estimateKeys().some((k) => k[1] === 30)).toBe(true)
-    expect(screen.getByTestId("database-estimate").textContent).toContain('"rows":"900,000"')
+    expect(screen.getByTestId("database-estimate").textContent).toContain(
+        'Database.Cleanup.Estimate {"rows":"900,000"',
+    )
 
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
     expect(screen.getByText("Database.Confirm.Title")).toBeTruthy()
     expect(screen.getByText("Database.Confirm.WithVacuum")).toBeTruthy()
+    expect(screen.getByRole("alertdialog").textContent).toContain("Database.Cleanup.Estimate {")
     expect(mocks.start).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
@@ -185,8 +188,16 @@ test("unchecking VACUUM sends vacuum false", async () => {
     fireEvent.click(screen.getByDisplayValue("90"))
     await waitFor(() => expect(estimateKeys().some((k) => k[1] === 90)).toBe(true))
     await waitFor(() => expect(screen.getByText("Database.Cleanup.Run")).toBeTruthy())
+    // without VACUUM the space is only freed by a later compaction
+    expect(screen.getByTestId("database-estimate").textContent).toContain(
+        "Database.Cleanup.EstimateNoVacuum",
+    )
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
     expect(screen.getByText("Database.Confirm.WithoutVacuum")).toBeTruthy()
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+        "Database.Cleanup.EstimateNoVacuum",
+    )
+    expect(screen.getByRole("alertdialog").textContent).not.toContain("Database.Cleanup.Estimate {")
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
     expect(screen.queryByText("Database.Confirm.VacuumLock")).toBeNull()
     fireEvent.click(screen.getByText("Database.Confirm.Run"))
@@ -201,7 +212,21 @@ test("custom days below 30 warn about the charts; invalid input disables the cle
     const input = screen.getByRole("spinbutton")
 
     fireEvent.change(input, { target: { value: "7" } })
-    expect(screen.getByTestId("database-short-retention")).toBeTruthy()
+    // 7-29 days: only the 30-day charts lose data
+    expect(screen.getByTestId("database-short-retention").textContent).toBe(
+        "Database.Cleanup.ShortRetention",
+    )
+    fireEvent.change(input, { target: { value: "29" } })
+    expect(screen.getByTestId("database-short-retention").textContent).toBe(
+        "Database.Cleanup.ShortRetention",
+    )
+    fireEvent.change(input, { target: { value: "6" } })
+    expect(screen.getByTestId("database-short-retention").textContent).toBe(
+        "Database.Cleanup.ShortRetentionWeek",
+    )
+    fireEvent.change(input, { target: { value: "30" } })
+    expect(screen.queryByTestId("database-short-retention")).toBeNull()
+    fireEvent.change(input, { target: { value: "7" } })
     await waitFor(() => expect(estimateKeys().some((k) => k[1] === 7)).toBe(true))
 
     fireEvent.change(input, { target: { value: "0" } })
@@ -235,7 +260,14 @@ test("insufficient disk space disables VACUUM and the cleanup only deletes", asy
     expect(screen.getByTestId("database-vacuum-hint").textContent).toContain(
         "Database.Cleanup.VacuumNoSpace",
     )
+    expect(screen.getByTestId("database-estimate").textContent).toContain(
+        "Database.Cleanup.EstimateNoVacuum",
+    )
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
+    expect(screen.getByText("Database.Confirm.WithoutVacuum")).toBeTruthy()
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+        "Database.Cleanup.EstimateNoVacuum",
+    )
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
     fireEvent.click(screen.getByText("Database.Confirm.Run"))
     await waitFor(() =>

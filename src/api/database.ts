@@ -57,8 +57,10 @@ export const RETENTION_MIN_DAYS = 1
 export const RETENTION_MAX_DAYS = 3650
 export const RETENTION_DEFAULT_DAYS = 30
 export const RETENTION_PRESETS = [30, 90, 180] as const
-/** Below this the 7- and 30-day charts lose data; the 30-day status bar does not. */
+/** Below this the 30-day charts lose data; the 30-day status bar does not. */
 export const RETENTION_FULL_CHART_DAYS = 30
+/** Below this the 7-day charts lose data as well. */
+export const RETENTION_WEEK_CHART_DAYS = 7
 
 export const getDatabaseUsage = (retentionDays?: number) =>
     fetcher<DatabaseUsage>(

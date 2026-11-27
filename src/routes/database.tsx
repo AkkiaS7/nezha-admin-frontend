@@ -8,6 +8,7 @@ import {
     RETENTION_MAX_DAYS,
     RETENTION_MIN_DAYS,
     RETENTION_PRESETS,
+    RETENTION_WEEK_CHART_DAYS,
     getDatabaseUsage,
     isJobRunning,
     isUnsupportedError,
@@ -48,6 +49,11 @@ interface CleanupPlan {
     vacuum: boolean
     rows: number
     freeSize: number
+}
+
+/** The space is only given back by VACUUM; without it only the rows are deleted. */
+function estimateKey(vacuum: boolean): string {
+    return vacuum ? "Database.Cleanup.Estimate" : "Database.Cleanup.EstimateNoVacuum"
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -298,7 +304,9 @@ export default function DatabasePage() {
                                             className="text-sm text-amber-600"
                                             data-testid="database-short-retention"
                                         >
-                                            {t("Database.Cleanup.ShortRetention")}
+                                            {days < RETENTION_WEEK_CHART_DAYS
+                                                ? t("Database.Cleanup.ShortRetentionWeek")
+                                                : t("Database.Cleanup.ShortRetention")}
                                         </p>
                                     )}
                                 </fieldset>
@@ -313,7 +321,7 @@ export default function DatabasePage() {
                                                 : t("Database.Cleanup.Estimating")
                                             : deletable === 0
                                               ? t("Database.Cleanup.NothingToClean")
-                                              : t("Database.Cleanup.Estimate", {
+                                              : t(estimateKey(vacuumEffective), {
                                                     rows: deletable.toLocaleString(),
                                                     size: formatBytes(
                                                         est.estimate!.estimated_free_size,
@@ -405,7 +413,7 @@ export default function DatabasePage() {
                                     <ul className="list-disc space-y-1 pl-5">
                                         <li>{t("Database.Cleanup.Days", { days: plan.days })}</li>
                                         <li>
-                                            {t("Database.Cleanup.Estimate", {
+                                            {t(estimateKey(plan.vacuum), {
                                                 rows: plan.rows.toLocaleString(),
                                                 size: formatBytes(plan.freeSize),
                                             })}
