@@ -13,6 +13,16 @@ function buildUrl(path: string, data?: any): string {
     return url.toString()
 }
 
+/** Thrown by fetcher() for a non-2xx response; callers can branch on status. */
+export class FetcherError extends Error {
+    readonly status: number
+    constructor(message: string, status: number) {
+        super(message)
+        this.name = "FetcherError"
+        this.status = status
+    }
+}
+
 export enum FetcherMethod {
     GET = "GET",
     POST = "POST",
@@ -95,7 +105,7 @@ export async function fetcher<T>(method: FetcherMethod, path: string, data?: any
         })
     }
     if (!response.ok) {
-        throw new Error(await failedResponseMessage(response))
+        throw new FetcherError(await failedResponseMessage(response), response.status)
     }
     const text = await response.text()
     if (text !== "") {
