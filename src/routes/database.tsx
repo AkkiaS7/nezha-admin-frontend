@@ -37,7 +37,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Navigate } from "react-router-dom"
 import { toast } from "sonner"
@@ -84,6 +84,8 @@ export default function DatabasePage() {
     const failures = useRef(0)
     const [pollFailures, setPollFailures] = useState(0)
     const [pollError, setPollError] = useState<Error | null>(null)
+    // started_at of the cleanup whose restart we are waiting for (see below).
+    const awaitingRestart = useRef<string | null>(null)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
         async () => {
@@ -98,7 +100,9 @@ export default function DatabasePage() {
                 // revalidation before React re-renders with the POSTed job, and
                 // an earlier visit leaves a running job there as well.
                 const cur = cache.get(DATABASE_USAGE_KEY)?.data as DatabaseUsage | undefined
-                if (!cur || !isJobRunning(cur.job.state) || isUnsupportedError(e)) throw e
+                const waiting =
+                    !!cur && (isJobRunning(cur.job.state) || awaitingRestart.current !== null)
+                if (!cur || !waiting || isUnsupportedError(e)) throw e
                 failures.current += 1
                 setPollFailures(failures.current)
                 setPollError(e as Error)
@@ -106,8 +110,9 @@ export default function DatabasePage() {
             }
         },
         {
-            // Poll only while a cleanup is in flight.
-            refreshInterval: (data) => (isJobRunning(data?.job.state) ? JOB_POLL_MS : 0),
+            // Poll only while a cleanup is in flight or its restart is awaited.
+            refreshInterval: (data) =>
+                isJobRunning(data?.job.state) || awaitingRestart.current !== null ? JOB_POLL_MS : 0,
             shouldRetryOnError: (e) => !isUnsupportedError(e),
         },
     )
@@ -150,16 +155,25 @@ export default function DatabasePage() {
     const [step, setStep] = useState<"confirm" | "final" | null>(null)
     const [submitting, setSubmitting] = useState(false)
 
-    // Announce a cleanup that finished while this page was watching it.
+    // Announce a cleanup that finished while this page was watching it, once.
+    const announced = useRef("")
+    const announce = useCallback(
+        (j: DatabaseCleanupJob) => {
+            if (j.state !== "succeeded" && j.state !== "failed") return
+            const id = `${j.started_at}/${j.state}`
+            if (announced.current === id) return
+            announced.current = id
+            if (j.state === "succeeded") toast.success(t("Database.Cleanup.Finished"))
+            else toast.error(t("Database.Cleanup.Failed"), { description: j.error })
+        },
+        [t],
+    )
     const prevState = useRef(job?.state)
     useEffect(() => {
         const prev = prevState.current
         prevState.current = job?.state
-        if (!job || !isJobRunning(prev)) return
-        if (job.state === "succeeded") toast.success(t("Database.Cleanup.Finished"))
-        else if (job.state === "failed")
-            toast.error(t("Database.Cleanup.Failed"), { description: job.error })
-    }, [job, t])
+        if (job && isJobRunning(prev)) announce(job)
+    }, [job, announce])
 
     // A running cleanup shows the mode it was started with.
     const mode: VacuumMode = runningMode ?? selectedMode
@@ -172,11 +186,28 @@ export default function DatabasePage() {
     // in a row (a missed "restarting") count, not a brief disconnect. Our own
     // authenticated polling decides when it is over, not an anonymous probe that
     // may still reach the old process.
-    const restartActive =
-        job?.state === "restarting" ||
-        (runningMode === "restart" &&
-            job?.state === "deleting" &&
-            pollFailures >= POLL_FAILURE_LIMIT)
+    //
+    // The wait is tied to that cleanup (its started_at, which the result after
+    // the restart keeps): a poll that returns no job yet (idle) or another
+    // job's result keeps the overlay and the polling going; only a successful
+    // poll about this cleanup ends it, with its final state, or with
+    // "deleting" when the failed polls were a disconnect after all.
+    const suspectedRestart =
+        runningMode === "restart" && job?.state === "deleting" && pollFailures >= POLL_FAILURE_LIMIT
+    const [pendingRestart, setPendingRestart] = useState<string | null>(null)
+    awaitingRestart.current = pendingRestart
+    useEffect(() => {
+        if (!job) return
+        if (pendingRestart === null) {
+            if (job.state === "restarting" || suspectedRestart) setPendingRestart(job.started_at)
+            return
+        }
+        if (pollFailures > 0 || job.started_at !== pendingRestart || job.state === "restarting")
+            return
+        setPendingRestart(null)
+        announce(job)
+    }, [job, pollFailures, pendingRestart, suspectedRestart, announce])
+    const restartActive = pendingRestart !== null || job?.state === "restarting" || suspectedRestart
     const [restartTimedOut, setRestartTimedOut] = useState(false)
     useEffect(() => {
         setRestartTimedOut(false)
