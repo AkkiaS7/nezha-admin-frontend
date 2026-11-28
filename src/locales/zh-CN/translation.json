@@ -599,10 +599,9 @@
         "VacuumRecommended": {
             "Title": "建议重启面板时压缩数据库",
             "Description": "数据库有约 {{size}} 的空闲空间可以回收，但在线压缩耗时较长，为避免后台卡顿，每周维护和手动维护会跳过它。压缩一次之后，后续维护会自动分批回收空间。",
-            "Restart": "建议在下方执行一次清理，压缩方式选择“重启面板时压缩”。不想删除记录时，点击“只压缩，不删除记录”。",
-            "Online": "当前环境无法自动重启面板。可以在下方执行一次清理并选择“现场压缩”，请安排在访问少的时段进行，压缩期间面板没有响应。不想删除记录时，点击“只压缩，不删除记录”。",
-            "NoCleanup": "服务监控历史没有存放在 SQLite 中，无法在此页面压缩数据库。",
-            "Prepare": "只压缩，不删除记录"
+            "Restart": "建议在下方执行一次清理，压缩方式选择“重启面板时压缩”。",
+            "Online": "当前环境无法自动重启面板。可以在下方执行一次清理并选择“现场压缩”，请安排在访问少的时段进行，压缩期间面板没有响应。",
+            "NoCleanup": "服务监控历史没有存放在 SQLite 中，无法在此页面压缩数据库。"
         },
         "Usage": {
             "Title": "数据库占用",
@@ -624,7 +623,6 @@
             "ShortRetentionWeek": "保留少于 7 天时，7 天和 30 天图表将不完整；30 天状态条不受影响。",
             "Estimating": "正在计算可释放的空间…",
             "NothingToClean": "没有可清理的记录。",
-            "NothingToCleanCompact": "没有可删除的记录。选择压缩方式后可以只压缩数据库，回收约 {{size}}。",
             "Estimate": "将删除约 {{rows}} 条记录，预计释放约 {{size}}。",
             "EstimateWithSize": "将删除约 {{rows}} 条记录，预计释放约 {{size}}，压缩后约 {{after}}。",
             "EstimateNoVacuum": "将删除约 {{rows}} 条记录。不压缩时文件不会变小，约 {{size}} 的空间要在压缩后才会释放。",
@@ -636,7 +634,6 @@
             "VacuumHintUnknown": "估算失败（原因见上方），无法得知压缩所需的临时磁盘空间。",
             "VacuumNoSpace": "磁盘空间不足，无法压缩：需要约 {{required}}，当前剩余 {{free}}。只能删除记录。",
             "Run": "清理",
-            "RunCompact": "压缩",
             "Deleting": "删除中…",
             "Vacuuming": "压缩中…",
             "Restarting": "重启中…",
@@ -665,14 +662,11 @@
         },
         "Confirm": {
             "Title": "确定清理服务监控历史？",
-            "CompactTitle": "确定压缩数据库？",
-            "CompactOnly": "不删除任何记录，只压缩数据库。",
             "Next": "继续",
             "FinalTitle": "再次确认",
             "Irreversible": "删除的历史无法恢复。如果以后可能用到，请先备份数据库。",
             "GoBackup": "前往备份",
             "Run": "删除历史",
-            "RunCompact": "压缩数据库",
             "ModeOnline": "现场压缩，预计{{duration}}",
             "ModeOnlineNoTime": "现场压缩",
             "ModeRestart": "重启面板并在启动时压缩，预计{{duration}}不可用",

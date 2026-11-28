@@ -11,8 +11,6 @@ import {
     RETENTION_PRESETS,
     RETENTION_WEEK_CHART_DAYS,
     VacuumMode,
-    canCompactOnly,
-    compactOnlyRetentionDays,
     databaseErrorKind,
     defaultVacuumMode,
     getDatabaseUsage,
@@ -250,9 +248,7 @@ export default function DatabasePage() {
 
     const data = usage.data
     const deletable = est?.estimate?.deletable_rows ?? 0
-    // Nothing to delete, but the server recommends a compaction: compact only.
-    const compactOnly = deletable === 0 && canCompactOnly(est, mode)
-    const canClean = !!est?.estimate && (deletable > 0 || compactOnly) && !running && !submitting
+    const canClean = !!est?.estimate && deletable > 0 && !running && !submitting
 
     // Raw codes such as ApiErrorUnauthorized mean nothing to users.
     function errorText(e: unknown): string {
@@ -341,18 +337,6 @@ export default function DatabasePage() {
             restartSeconds: est.estimate.restart_downtime_seconds,
         })
         setStep("confirm")
-    }
-
-    // Preselect a cleanup that deletes nothing and compacts, as the
-    // vacuum_recommended notice suggests.
-    function prepareCompactOnly() {
-        if (!data) return
-        setChoice("custom")
-        setCustomInput(String(compactOnlyRetentionDays(data)))
-        setModeChoice(data.restart_available ? "restart" : "online")
-        document.querySelector('[data-testid="database-cleanup"]')?.scrollIntoView?.({
-            behavior: "smooth",
-        })
     }
 
     async function runCleanup() {
@@ -481,15 +465,6 @@ export default function DatabasePage() {
                                               ? t("Database.VacuumRecommended.Restart")
                                               : t("Database.VacuumRecommended.Online")}
                                     </p>
-                                    {data.history_available && (
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={prepareCompactOnly}
-                                        >
-                                            {t("Database.VacuumRecommended.Prepare")}
-                                        </Button>
-                                    )}
                                 </div>
                             )}
                         </CardContent>
@@ -581,11 +556,7 @@ export default function DatabasePage() {
                                                   })
                                                 : t("Database.Cleanup.Estimating")
                                             : deletable === 0
-                                              ? est.vacuum_recommended
-                                                  ? t("Database.Cleanup.NothingToCleanCompact", {
-                                                        size: formatBytes(est.free_pages_size),
-                                                    })
-                                                  : t("Database.Cleanup.NothingToClean")
+                                              ? t("Database.Cleanup.NothingToClean")
                                               : estimateText()}
                                         {est?.estimate?.approximate && deletable > 0 && (
                                             <span className="text-muted-foreground ml-1">
@@ -691,9 +662,7 @@ export default function DatabasePage() {
                                           ? t("Database.Cleanup.Vacuuming")
                                           : job?.state === "restarting"
                                             ? t("Database.Cleanup.Restarting")
-                                            : compactOnly
-                                              ? t("Database.Cleanup.RunCompact")
-                                              : t("Database.Cleanup.Run")}
+                                            : t("Database.Cleanup.Run")}
                                 </Button>
 
                                 {job && (job.state === "succeeded" || job.state === "failed") && (
@@ -715,41 +684,27 @@ export default function DatabasePage() {
                     {plan && step === "confirm" && (
                         <>
                             <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                    {plan.rows === 0
-                                        ? t("Database.Confirm.CompactTitle")
-                                        : t("Database.Confirm.Title")}
-                                </AlertDialogTitle>
+                                <AlertDialogTitle>{t("Database.Confirm.Title")}</AlertDialogTitle>
                                 <AlertDialogDescription asChild>
                                     <ul className="list-disc space-y-1 pl-5">
-                                        {plan.rows === 0 ? (
-                                            <li>{t("Database.Confirm.CompactOnly")}</li>
-                                        ) : (
-                                            <>
-                                                <li>
-                                                    {t("Database.Cleanup.Days", {
-                                                        days: plan.days,
-                                                    })}
-                                                </li>
-                                                <li>
-                                                    {t(
-                                                        plan.mode === "none"
-                                                            ? "Database.Cleanup.EstimateNoVacuum"
-                                                            : plan.sizeAfter !== undefined
-                                                              ? "Database.Cleanup.EstimateWithSize"
-                                                              : "Database.Cleanup.Estimate",
-                                                        {
-                                                            rows: plan.rows.toLocaleString(),
-                                                            size: formatBytes(plan.freeSize),
-                                                            after:
-                                                                plan.sizeAfter !== undefined
-                                                                    ? formatBytes(plan.sizeAfter)
-                                                                    : "",
-                                                        },
-                                                    )}
-                                                </li>
-                                            </>
-                                        )}
+                                        <li>{t("Database.Cleanup.Days", { days: plan.days })}</li>
+                                        <li>
+                                            {t(
+                                                plan.mode === "none"
+                                                    ? "Database.Cleanup.EstimateNoVacuum"
+                                                    : plan.sizeAfter !== undefined
+                                                      ? "Database.Cleanup.EstimateWithSize"
+                                                      : "Database.Cleanup.Estimate",
+                                                {
+                                                    rows: plan.rows.toLocaleString(),
+                                                    size: formatBytes(plan.freeSize),
+                                                    after:
+                                                        plan.sizeAfter !== undefined
+                                                            ? formatBytes(plan.sizeAfter)
+                                                            : "",
+                                                },
+                                            )}
+                                        </li>
                                         <li data-testid="database-confirm-mode">
                                             {plan.mode === "online"
                                                 ? withDuration(
@@ -782,9 +737,7 @@ export default function DatabasePage() {
                                 </AlertDialogTitle>
                                 <AlertDialogDescription asChild>
                                     <div className="space-y-2">
-                                        {plan.rows > 0 && (
-                                            <p>{t("Database.Confirm.Irreversible")}</p>
-                                        )}
+                                        <p>{t("Database.Confirm.Irreversible")}</p>
                                         {plan.mode === "online" && (
                                             <p data-testid="database-confirm-impact">
                                                 {withDuration(
@@ -824,11 +777,7 @@ export default function DatabasePage() {
                                     disabled={submitting}
                                     onClick={runCleanup}
                                 >
-                                    {submitting
-                                        ? t("Loading") + "..."
-                                        : plan.rows === 0
-                                          ? t("Database.Confirm.RunCompact")
-                                          : t("Database.Confirm.Run")}
+                                    {submitting ? t("Loading") + "..." : t("Database.Confirm.Run")}
                                 </Button>
                             </AlertDialogFooter>
                         </>
