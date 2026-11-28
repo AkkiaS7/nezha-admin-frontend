@@ -181,3 +181,39 @@ test("without a running job a failure is shown at once", async () => {
     expect(screen.getByText("Results.ErrorFetchingResource")).toBeTruthy()
     expect(notice()).toBeNull()
 })
+
+test("a failed poll during an online compaction explains the stall at once", async () => {
+    mocks.get.mockResolvedValueOnce({
+        ...usage("vacuuming"),
+        job: { ...job("vacuuming"), vacuum_mode: "online" },
+    })
+    renderPage()
+    await tick(0)
+    mocks.get.mockImplementation(() => Promise.reject(new Error("ApiErrorUnauthorized")))
+    await tick(2000)
+    expect(screen.getByText("Database.Cleanup.PollFailedOnline")).toBeTruthy()
+    expect(screen.queryByText(/ApiErrorUnauthorized/)).toBeNull()
+    // polling goes on and recovers
+    mocks.get.mockResolvedValue({
+        ...usage("succeeded"),
+        job: { ...job("succeeded"), vacuum_mode: "online", finished_at: "2000-01-01T00:00:00Z" },
+    })
+    await tick(2000)
+    expect(screen.queryByText("Database.Cleanup.PollFailedOnline")).toBeNull()
+    expect(screen.getByTestId("database-job-result")).toBeTruthy()
+})
+
+test("a restart cleanup whose dashboard goes down shows the restart overlay", async () => {
+    mocks.get.mockResolvedValueOnce({
+        ...usage("deleting"),
+        job: { ...job("deleting"), vacuum_mode: "restart" },
+    })
+    renderPage()
+    await tick(0)
+    expect(screen.queryByText("Database.Restart.Title")).toBeNull()
+    // the restarting state was missed: the next poll already fails
+    mocks.get.mockImplementation(locked)
+    await tick(2000)
+    expect(screen.getByText("Database.Restart.Title")).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+})
