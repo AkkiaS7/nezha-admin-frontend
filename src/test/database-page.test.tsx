@@ -343,3 +343,53 @@ test("a failed job shows its error and the deleted count", () => {
     // loading a page with an old result does not toast
     expect(mocks.error).not.toHaveBeenCalled()
 })
+
+function hint(): string {
+    return screen.getByTestId("database-vacuum-hint").textContent ?? ""
+}
+
+test("the temporary space hint never shows a placeholder", async () => {
+    // estimate known, free space known
+    const view = renderPage()
+    expect(hint()).toContain("Database.Cleanup.VacuumHint {")
+    expect(hint()).not.toMatch(/"required":"-"/)
+    view.unmount()
+
+    // free space unknown: only the required space, and why the rest is missing
+    diskFree = 0
+    renderPage()
+    expect(hint()).toContain("Database.Cleanup.VacuumHintNoFree")
+    expect(hint()).toContain('"required":"400.0 MiB"')
+})
+
+test("the hint says the space is being calculated or could not be estimated", () => {
+    const base = mocks.swr.getMockImplementation()!
+    mocks.swr.mockImplementation((key: unknown) =>
+        Array.isArray(key) ? { data: undefined, isLoading: true } : base(key),
+    )
+    const view = renderPage()
+    expect(hint()).toBe("Database.Cleanup.VacuumHintPending")
+    view.unmount()
+
+    mocks.swr.mockImplementation((key: unknown) =>
+        Array.isArray(key)
+            ? { data: undefined, error: new Error("timeout"), isLoading: false }
+            : base(key),
+    )
+    renderPage()
+    expect(hint()).toBe("Database.Cleanup.VacuumHintUnknown")
+    expect(screen.getByTestId("database-estimate").textContent).toContain("timeout")
+})
+
+test("without an estimate to show the hint keeps to the general warning", () => {
+    usage = { data: makeUsage({ job: makeJob({ state: "deleting" }) }) }
+    const view = renderPage()
+    expect(hint()).toBe("Database.Cleanup.VacuumHintBase")
+    view.unmount()
+
+    usage = { data: makeUsage() }
+    renderPage()
+    fireEvent.click(screen.getByDisplayValue("custom"))
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "0" } })
+    expect(hint()).toBe("Database.Cleanup.VacuumHintBase")
+})

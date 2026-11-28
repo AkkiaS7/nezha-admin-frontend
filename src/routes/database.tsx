@@ -149,6 +149,24 @@ export default function DatabasePage() {
     const deletable = est?.estimate?.deletable_rows ?? 0
     const canClean = !!est?.estimate && deletable > 0 && !running && !submitting
 
+    // Never show a placeholder for the temporary space: say why it is missing.
+    function vacuumHint(): string {
+        if (est?.estimate) {
+            const required = formatBytes(est.estimate.vacuum_required_size)
+            if (vacuumBlocked)
+                return t("Database.Cleanup.VacuumNoSpace", {
+                    required,
+                    free: formatBytes(est.disk_free),
+                })
+            return est.disk_free > 0
+                ? t("Database.Cleanup.VacuumHint", { required, free: formatBytes(est.disk_free) })
+                : t("Database.Cleanup.VacuumHintNoFree", { required })
+        }
+        if (running || days === null) return t("Database.Cleanup.VacuumHintBase")
+        if (settled && estimate.error) return t("Database.Cleanup.VacuumHintUnknown")
+        return t("Database.Cleanup.VacuumHintPending")
+    }
+
     function openConfirm() {
         if (!est?.estimate || days === null) return
         setPlan({
@@ -386,24 +404,7 @@ export default function DatabasePage() {
                                         )}
                                         data-testid="database-vacuum-hint"
                                     >
-                                        {vacuumBlocked
-                                            ? t("Database.Cleanup.VacuumNoSpace", {
-                                                  required: formatBytes(
-                                                      est!.estimate!.vacuum_required_size,
-                                                  ),
-                                                  free: formatBytes(est!.disk_free),
-                                              })
-                                            : t("Database.Cleanup.VacuumHint", {
-                                                  required: est?.estimate
-                                                      ? formatBytes(
-                                                            est.estimate.vacuum_required_size,
-                                                        )
-                                                      : "-",
-                                                  free:
-                                                      data.disk_free > 0
-                                                          ? formatBytes(data.disk_free)
-                                                          : t("Database.Unknown"),
-                                              })}
+                                        {vacuumHint()}
                                     </p>
                                 </div>
 
