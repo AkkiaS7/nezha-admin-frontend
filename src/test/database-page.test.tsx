@@ -65,6 +65,8 @@ function makeUsage(over: Partial<DatabaseUsage> = {}): DatabaseUsage {
 let usage: { data?: DatabaseUsage; error?: Error }
 let deletableRows: (days: number) => number
 let diskFree: number
+let restartAvailable: boolean | undefined
+let estimateExtra: Record<string, unknown>
 const usageMutate = vi.fn()
 
 beforeEach(() => {
@@ -73,6 +75,8 @@ beforeEach(() => {
     usage = { data: makeUsage() }
     deletableRows = (days) => (days >= 180 ? 0 : Math.round(900_000 / days) * 30)
     diskFree = 8 * 1024 * 1024 * 1024
+    restartAvailable = undefined
+    estimateExtra = {}
     mocks.swr.mockImplementation((key: unknown) => {
         if (key === "/api/v1/database/usage")
             return { ...usage, mutate: usageMutate, isLoading: false }
@@ -82,7 +86,9 @@ beforeEach(() => {
             return {
                 data: makeUsage({
                     disk_free: diskFree,
+                    restart_available: restartAvailable,
                     estimate: {
+                        ...estimateExtra,
                         retention_days: days,
                         deletable_rows: rows,
                         estimated_free_size: rows * 230,
@@ -155,22 +161,24 @@ test("30 days is the default and the cleanup runs only after two confirmations",
 
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
     expect(screen.getByText("Database.Confirm.Title")).toBeTruthy()
-    expect(screen.getByText("Database.Confirm.WithVacuum")).toBeTruthy()
+    expect(screen.getByTestId("database-confirm-mode").textContent).toContain(
+        "Database.Confirm.ModeOnline",
+    )
     expect(screen.getByRole("alertdialog").textContent).toContain("Database.Cleanup.Estimate {")
     expect(mocks.start).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
     expect(screen.getByText("Database.Confirm.FinalTitle")).toBeTruthy()
-    expect(screen.getByText("Database.Confirm.VacuumLock")).toBeTruthy()
+    expect(screen.getByTestId("database-confirm-impact").textContent).toContain(
+        "Database.Confirm.OnlineImpact",
+    )
     expect(screen.getByText("Database.Confirm.GoBackup").getAttribute("href")).toBe(
         "/dashboard/settings/backup",
     )
     expect(mocks.start).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByText("Database.Confirm.Run"))
-    await waitFor(() =>
-        expect(mocks.start).toHaveBeenCalledWith({ retention_days: 30, vacuum: true }),
-    )
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(30, "online"))
     await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("Database.Cleanup.Started"))
     expect(usageMutate).toHaveBeenCalled()
 })
@@ -184,10 +192,10 @@ test("cancelling the second confirmation does not clean up", () => {
     expect(screen.queryByText("Database.Confirm.FinalTitle")).toBeNull()
 })
 
-test("unchecking VACUUM sends vacuum false", async () => {
+test("choosing no compaction deletes only", async () => {
     mocks.start.mockResolvedValue(makeJob({ state: "deleting" }))
     renderPage()
-    fireEvent.click(screen.getByLabelText("Database.Cleanup.Vacuum"))
+    fireEvent.click(screen.getByDisplayValue("none"))
     fireEvent.click(screen.getByDisplayValue("90"))
     await waitFor(() => expect(estimateKeys().some((k) => k[1] === 90)).toBe(true))
     await waitFor(() => expect(screen.getByText("Database.Cleanup.Run")).toBeTruthy())
@@ -196,17 +204,15 @@ test("unchecking VACUUM sends vacuum false", async () => {
         "Database.Cleanup.EstimateNoVacuum",
     )
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
-    expect(screen.getByText("Database.Confirm.WithoutVacuum")).toBeTruthy()
+    expect(screen.getByText("Database.Confirm.ModeNone")).toBeTruthy()
     expect(screen.getByRole("alertdialog").textContent).toContain(
         "Database.Cleanup.EstimateNoVacuum",
     )
     expect(screen.getByRole("alertdialog").textContent).not.toContain("Database.Cleanup.Estimate {")
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
-    expect(screen.queryByText("Database.Confirm.VacuumLock")).toBeNull()
+    expect(screen.queryByTestId("database-confirm-impact")).toBeNull()
     fireEvent.click(screen.getByText("Database.Confirm.Run"))
-    await waitFor(() =>
-        expect(mocks.start).toHaveBeenCalledWith({ retention_days: 90, vacuum: false }),
-    )
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(90, "none"))
 })
 
 test("custom days below 30 warn about the charts; invalid input disables the cleanup", async () => {
@@ -257,9 +263,9 @@ test("insufficient disk space disables VACUUM and the cleanup only deletes", asy
     diskFree = 100 * 1024 * 1024
     mocks.start.mockResolvedValue(makeJob({ state: "deleting" }))
     renderPage()
-    const box = screen.getByLabelText("Database.Cleanup.Vacuum")
-    expect(box.getAttribute("data-state")).toBe("unchecked")
-    expect((box as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByDisplayValue("none") as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByDisplayValue("online") as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByDisplayValue("restart") as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByTestId("database-vacuum-hint").textContent).toContain(
         "Database.Cleanup.VacuumNoSpace",
     )
@@ -267,15 +273,13 @@ test("insufficient disk space disables VACUUM and the cleanup only deletes", asy
         "Database.Cleanup.EstimateNoVacuum",
     )
     fireEvent.click(screen.getByText("Database.Cleanup.Run"))
-    expect(screen.getByText("Database.Confirm.WithoutVacuum")).toBeTruthy()
+    expect(screen.getByText("Database.Confirm.ModeNone")).toBeTruthy()
     expect(screen.getByRole("alertdialog").textContent).toContain(
         "Database.Cleanup.EstimateNoVacuum",
     )
     fireEvent.click(screen.getByText("Database.Confirm.Next"))
     fireEvent.click(screen.getByText("Database.Confirm.Run"))
-    await waitFor(() =>
-        expect(mocks.start).toHaveBeenCalledWith({ retention_days: 30, vacuum: false }),
-    )
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(30, "none"))
 })
 
 test("a running cleanup shows its progress, polls and blocks another run", () => {
@@ -418,4 +422,141 @@ test("a rejected start shows the friendly text for auth codes", async () => {
             description: "Database.Error.Unauthorized",
         }),
     )
+})
+
+const longEstimate = {
+    size_after: 900 * 1024 * 1024,
+    online_vacuum_seconds: 14,
+    restart_downtime_seconds: 29,
+    recommended_vacuum_mode: "restart",
+    recommendation_reason: "long",
+}
+
+test("a large database preselects compacting during a restart and explains why", async () => {
+    restartAvailable = true
+    estimateExtra = longEstimate
+    mocks.start.mockResolvedValue(
+        makeJob({ state: "deleting", vacuum: true, vacuum_mode: "restart" }),
+    )
+    renderPage()
+    expect((screen.getByDisplayValue("restart") as HTMLInputElement).checked).toBe(true)
+    const modes = screen.getByTestId("database-vacuum-mode").textContent ?? ""
+    expect(modes).toContain("Database.Mode.Recommended")
+    expect(modes).toContain(
+        'Database.Mode.OnlineDetail {"duration":"Database.Duration {\\"seconds\\":14}"}',
+    )
+    expect(modes).toContain(
+        'Database.Mode.RestartDetail {"duration":"Database.Duration {\\"seconds\\":29}"}',
+    )
+    expect(screen.getByTestId("database-vacuum-recommendation").textContent).toContain(
+        "Database.Mode.ReasonLong",
+    )
+    expect(screen.getByTestId("database-estimate").textContent).toContain(
+        "Database.Cleanup.EstimateWithSize",
+    )
+
+    fireEvent.click(screen.getByText("Database.Cleanup.Run"))
+    expect(screen.getByTestId("database-confirm-mode").textContent).toContain(
+        "Database.Confirm.ModeRestart",
+    )
+    fireEvent.click(screen.getByText("Database.Confirm.Next"))
+    expect(screen.getByTestId("database-confirm-impact").textContent).toContain(
+        "Database.Confirm.RestartImpact",
+    )
+    expect(screen.getByText("Database.Confirm.RestartRequirement")).toBeTruthy()
+    fireEvent.click(screen.getByText("Database.Confirm.Run"))
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(30, "restart"))
+})
+
+test("the user can still compact now against the recommendation", async () => {
+    restartAvailable = true
+    estimateExtra = longEstimate
+    mocks.start.mockResolvedValue(makeJob({ state: "deleting", vacuum: true }))
+    renderPage()
+    fireEvent.click(screen.getByDisplayValue("online"))
+    fireEvent.click(screen.getByText("Database.Cleanup.Run"))
+    fireEvent.click(screen.getByText("Database.Confirm.Next"))
+    expect(screen.getByTestId("database-confirm-impact").textContent).toContain(
+        'Database.Confirm.OnlineImpact {"duration":"Database.Duration',
+    )
+    fireEvent.click(screen.getByText("Database.Confirm.Run"))
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(30, "online"))
+})
+
+test("without automatic restart the restart option is disabled and the impact is explained", () => {
+    restartAvailable = false
+    estimateExtra = {
+        ...longEstimate,
+        recommended_vacuum_mode: "online",
+        recommendation_reason: "restart_unavailable",
+    }
+    renderPage()
+    const restart = screen.getByDisplayValue("restart") as HTMLInputElement
+    expect(restart.disabled).toBe(true)
+    expect((screen.getByDisplayValue("online") as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByTestId("database-vacuum-mode").textContent).toContain(
+        "Database.Mode.RestartUnavailable",
+    )
+    expect(screen.getByTestId("database-vacuum-recommendation").textContent).toContain(
+        "Database.Mode.ReasonRestartUnavailable",
+    )
+})
+
+test("a small database recommends compacting now", () => {
+    restartAvailable = true
+    estimateExtra = {
+        ...longEstimate,
+        online_vacuum_seconds: 1,
+        recommended_vacuum_mode: "online",
+        recommendation_reason: "short",
+    }
+    renderPage()
+    expect((screen.getByDisplayValue("online") as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByDisplayValue("restart") as HTMLInputElement).disabled).toBe(false)
+    expect(screen.getByTestId("database-vacuum-recommendation").textContent).toContain(
+        "Database.Mode.ReasonShort",
+    )
+})
+
+test("an older dashboard without recommendations offers compacting now, not restarting", () => {
+    renderPage()
+    expect((screen.getByDisplayValue("online") as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByDisplayValue("restart") as HTMLInputElement).disabled).toBe(true)
+    expect(screen.queryByTestId("database-vacuum-recommendation")).toBeNull()
+    expect(screen.getByTestId("database-vacuum-mode").textContent).toContain(
+        'Database.Mode.OnlineDetail {"duration":"Database.DurationUnknown"}',
+    )
+})
+
+test("while the dashboard restarts to compact the restart overlay is shown", () => {
+    usage = {
+        data: makeUsage({
+            job: makeJob({ state: "restarting", vacuum: true, vacuum_mode: "restart" }),
+        }),
+    }
+    renderPage()
+    expect(screen.getByText("Database.Restart.Title")).toBeTruthy()
+    expect((screen.getByText("Database.Cleanup.Restarting") as HTMLButtonElement).disabled).toBe(
+        true,
+    )
+})
+
+test("a compaction done during the restart is reported", () => {
+    usage = {
+        data: makeUsage({
+            job: makeJob({
+                state: "succeeded",
+                vacuum: true,
+                vacuum_mode: "restart",
+                deleted_rows: 10,
+                freed_size: 100,
+                finished_at: "2000-01-01T00:00:00Z",
+            }),
+        }),
+    }
+    renderPage()
+    expect(screen.getByTestId("database-job-result").textContent).toContain(
+        "Database.Result.RestartDone",
+    )
+    expect(screen.queryByText("Database.Restart.Title")).toBeNull()
 })

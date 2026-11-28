@@ -10,14 +10,18 @@ import {
     RETENTION_MIN_DAYS,
     RETENTION_PRESETS,
     RETENTION_WEEK_CHART_DAYS,
+    VacuumMode,
     databaseErrorKind,
+    defaultVacuumMode,
     getDatabaseUsage,
     isJobRunning,
     isUnsupportedError,
+    jobVacuumMode,
     parseRetentionDays,
     startHistoryCleanup,
     vacuumBlockedByDisk,
 } from "@/api/database"
+import { RestartOverlay } from "@/components/backup/restart-overlay"
 import { SettingsTab } from "@/components/settings-tab"
 import {
     AlertDialog,
@@ -30,9 +34,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
@@ -48,15 +50,15 @@ type RetentionChoice = (typeof RETENTION_PRESETS)[number] | "custom"
 
 interface CleanupPlan {
     days: number
-    vacuum: boolean
+    mode: VacuumMode
     rows: number
     freeSize: number
+    sizeAfter?: number
+    onlineSeconds?: number
+    restartSeconds?: number
 }
 
-/** The space is only given back by VACUUM; without it only the rows are deleted. */
-function estimateKey(vacuum: boolean): string {
-    return vacuum ? "Database.Cleanup.Estimate" : "Database.Cleanup.EstimateNoVacuum"
-}
+const VACUUM_MODES: VacuumMode[] = ["online", "restart", "none"]
 
 function useDebounced<T>(value: T, ms: number): T {
     const [debounced, setDebounced] = useState(value)
@@ -78,6 +80,7 @@ export default function DatabasePage() {
     // counted here; the page only reports them after several in a row.
     const { cache } = useSWRConfig()
     const failures = useRef(0)
+    const [pollFailures, setPollFailures] = useState(0)
     const [pollError, setPollError] = useState<Error | null>(null)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
@@ -85,6 +88,7 @@ export default function DatabasePage() {
             try {
                 const next = await getDatabaseUsage()
                 failures.current = 0
+                setPollFailures(0)
                 setPollError(null)
                 return next
             } catch (e) {
@@ -94,7 +98,8 @@ export default function DatabasePage() {
                 const cur = cache.get(DATABASE_USAGE_KEY)?.data as DatabaseUsage | undefined
                 if (!cur || !isJobRunning(cur.job.state) || isUnsupportedError(e)) throw e
                 failures.current += 1
-                if (failures.current >= POLL_FAILURE_LIMIT) setPollError(e as Error)
+                setPollFailures(failures.current)
+                setPollError(e as Error)
                 return cur
             }
         },
@@ -106,6 +111,7 @@ export default function DatabasePage() {
     )
     const job = usage.data?.job
     const running = isJobRunning(job?.state)
+    const runningMode = job && running ? jobVacuumMode(job) : undefined
     const historyAvailable = !!usage.data?.history_available
 
     const [choice, setChoice] = useState<RetentionChoice>(RETENTION_DEFAULT_DAYS)
@@ -124,9 +130,19 @@ export default function DatabasePage() {
     const est =
         settled && estimate.data?.estimate?.retention_days === days ? estimate.data : undefined
 
-    const [vacuum, setVacuum] = useState(true)
+    // null follows the server's recommendation until the user picks a mode.
+    const [modeChoice, setModeChoice] = useState<VacuumMode | null>(null)
     const vacuumBlocked = vacuumBlockedByDisk(est)
-    const vacuumEffective = vacuum && !vacuumBlocked
+    const restartAvailable = !!est?.restart_available
+    const recommended = defaultVacuumMode(est)
+    const modeAllowed = (m: VacuumMode) =>
+        m === "none" || (!vacuumBlocked && (m === "online" || restartAvailable))
+    const mode: VacuumMode =
+        modeChoice && modeAllowed(modeChoice)
+            ? modeChoice
+            : modeAllowed(recommended)
+              ? recommended
+              : "none"
 
     const [plan, setPlan] = useState<CleanupPlan | null>(null)
     const [step, setStep] = useState<"confirm" | "final" | null>(null)
@@ -143,6 +159,12 @@ export default function DatabasePage() {
             toast.error(t("Database.Cleanup.Failed"), { description: job.error })
     }, [job, t])
 
+    // The dashboard restarts to compact: wait for it like after a restore. A
+    // failed poll right after the deletion also means it already went down.
+    const restartActive =
+        job?.state === "restarting" ||
+        (runningMode === "restart" && job?.state === "deleting" && pollFailures > 0)
+
     if (loading) return null
     if (!isAdmin) return <Navigate to="/dashboard/settings/api-tokens" replace />
 
@@ -157,6 +179,46 @@ export default function DatabasePage() {
         if (kind === "forbidden") return t("Database.Error.Forbidden")
         if (kind === "unavailable") return t("Database.Error.Unavailable")
         return e instanceof Error ? e.message : String(e)
+    }
+
+    function duration(seconds: number | undefined): string {
+        return seconds && seconds > 0
+            ? t("Database.Duration", { seconds })
+            : t("Database.DurationUnknown")
+    }
+
+    function estimateText(): string {
+        const e = est!.estimate!
+        const vars = {
+            rows: deletable.toLocaleString(),
+            size: formatBytes(e.estimated_free_size),
+            after: e.size_after !== undefined ? formatBytes(e.size_after) : "",
+        }
+        if (mode === "none") return t("Database.Cleanup.EstimateNoVacuum", vars)
+        return e.size_after !== undefined
+            ? t("Database.Cleanup.EstimateWithSize", vars)
+            : t("Database.Cleanup.Estimate", vars)
+    }
+
+    function recommendationText(): string | null {
+        const e = est?.estimate
+        if (!e?.recommendation_reason || vacuumBlocked) return null
+        const vars = {
+            online: duration(e.online_vacuum_seconds),
+            restart: duration(e.restart_downtime_seconds),
+        }
+        if (e.recommendation_reason === "short") return t("Database.Mode.ReasonShort", vars)
+        if (e.recommendation_reason === "long") return t("Database.Mode.ReasonLong", vars)
+        return t("Database.Mode.ReasonRestartUnavailable", vars)
+    }
+
+    function pollNotice(): string | null {
+        if (!running || !pollError || restartActive) return null
+        // An online compaction locks the database: stalls are expected, say so at once.
+        if (runningMode === "online" && job?.state === "vacuuming")
+            return t("Database.Cleanup.PollFailedOnline")
+        if (pollFailures < POLL_FAILURE_LIMIT) return null
+        return t("Database.Cleanup.PollFailed", { error: errorText(pollError) })
     }
 
     // Never show a placeholder for the temporary space: say why it is missing.
@@ -181,9 +243,12 @@ export default function DatabasePage() {
         if (!est?.estimate || days === null) return
         setPlan({
             days,
-            vacuum: vacuumEffective,
+            mode,
             rows: est.estimate.deletable_rows,
             freeSize: est.estimate.estimated_free_size,
+            sizeAfter: est.estimate.size_after,
+            onlineSeconds: est.estimate.online_vacuum_seconds,
+            restartSeconds: est.estimate.restart_downtime_seconds,
         })
         setStep("confirm")
     }
@@ -192,10 +257,7 @@ export default function DatabasePage() {
         if (!plan) return
         setSubmitting(true)
         try {
-            const started = await startHistoryCleanup({
-                retention_days: plan.days,
-                vacuum: plan.vacuum,
-            })
+            const started = await startHistoryCleanup(plan.days, plan.mode)
             prevState.current = started.state
             await usage.mutate((cur) => (cur ? { ...cur, job: started } : cur), {
                 revalidate: true,
@@ -220,9 +282,9 @@ export default function DatabasePage() {
                 </p>
             </div>
 
-            {running && pollError && (
+            {pollNotice() && (
                 <p className="text-destructive text-sm" role="alert">
-                    {t("Database.Cleanup.PollFailed", { error: errorText(pollError) })}
+                    {pollNotice()}
                 </p>
             )}
 
@@ -379,12 +441,7 @@ export default function DatabasePage() {
                                                 : t("Database.Cleanup.Estimating")
                                             : deletable === 0
                                               ? t("Database.Cleanup.NothingToClean")
-                                              : t(estimateKey(vacuumEffective), {
-                                                    rows: deletable.toLocaleString(),
-                                                    size: formatBytes(
-                                                        est.estimate!.estimated_free_size,
-                                                    ),
-                                                })}
+                                              : estimateText()}
                                         {est?.estimate?.approximate && deletable > 0 && (
                                             <span className="text-muted-foreground ml-1">
                                                 {t("Database.Cleanup.Approximate")}
@@ -393,18 +450,83 @@ export default function DatabasePage() {
                                     </p>
                                 )}
 
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <Checkbox
-                                            id="database-vacuum"
-                                            checked={vacuumEffective}
-                                            disabled={vacuumBlocked || running || submitting}
-                                            onCheckedChange={(v) => setVacuum(v === true)}
-                                        />
-                                        <Label htmlFor="database-vacuum">
-                                            {t("Database.Cleanup.Vacuum")}
-                                        </Label>
+                                <fieldset
+                                    disabled={running || submitting}
+                                    className="space-y-2"
+                                    data-testid="database-vacuum-mode"
+                                >
+                                    <legend className="text-sm font-medium">
+                                        {t("Database.Mode.Title")}
+                                    </legend>
+                                    <div className="flex flex-col gap-2">
+                                        {VACUUM_MODES.map((m) => (
+                                            <label
+                                                key={m}
+                                                className={cn(
+                                                    "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+                                                    mode === m && "border-primary",
+                                                    modeAllowed(m)
+                                                        ? "cursor-pointer"
+                                                        : "cursor-not-allowed opacity-60",
+                                                )}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="vacuum-mode"
+                                                    className="mt-0.5"
+                                                    value={m}
+                                                    checked={mode === m}
+                                                    disabled={!modeAllowed(m)}
+                                                    onChange={() => setModeChoice(m)}
+                                                />
+                                                <span>
+                                                    <span className="font-medium">
+                                                        {t(`Database.Mode.${m}`)}
+                                                    </span>
+                                                    {est?.estimate &&
+                                                        est.estimate.recommended_vacuum_mode ===
+                                                            m &&
+                                                        modeAllowed(m) && (
+                                                            <span className="text-primary ml-2 text-xs font-semibold">
+                                                                {t("Database.Mode.Recommended")}
+                                                            </span>
+                                                        )}
+                                                    <span className="text-muted-foreground block">
+                                                        {m === "online"
+                                                            ? t("Database.Mode.OnlineDetail", {
+                                                                  duration: duration(
+                                                                      est?.estimate
+                                                                          ?.online_vacuum_seconds,
+                                                                  ),
+                                                              })
+                                                            : m === "restart"
+                                                              ? est && !restartAvailable
+                                                                  ? t(
+                                                                        "Database.Mode.RestartUnavailable",
+                                                                    )
+                                                                  : t(
+                                                                        "Database.Mode.RestartDetail",
+                                                                        {
+                                                                            duration: duration(
+                                                                                est?.estimate
+                                                                                    ?.restart_downtime_seconds,
+                                                                            ),
+                                                                        },
+                                                                    )
+                                                              : t("Database.Mode.NoneDetail")}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        ))}
                                     </div>
+                                    {recommendationText() && (
+                                        <p
+                                            className="text-sm"
+                                            data-testid="database-vacuum-recommendation"
+                                        >
+                                            {recommendationText()}
+                                        </p>
+                                    )}
                                     <p
                                         className={cn(
                                             "text-sm",
@@ -416,7 +538,7 @@ export default function DatabasePage() {
                                     >
                                         {vacuumHint()}
                                     </p>
-                                </div>
+                                </fieldset>
 
                                 <Button
                                     variant="destructive"
@@ -427,7 +549,9 @@ export default function DatabasePage() {
                                         ? t("Database.Cleanup.Deleting")
                                         : job?.state === "vacuuming"
                                           ? t("Database.Cleanup.Vacuuming")
-                                          : t("Database.Cleanup.Run")}
+                                          : job?.state === "restarting"
+                                            ? t("Database.Cleanup.Restarting")
+                                            : t("Database.Cleanup.Run")}
                                 </Button>
 
                                 {job && (job.state === "succeeded" || job.state === "failed") && (
@@ -454,15 +578,32 @@ export default function DatabasePage() {
                                     <ul className="list-disc space-y-1 pl-5">
                                         <li>{t("Database.Cleanup.Days", { days: plan.days })}</li>
                                         <li>
-                                            {t(estimateKey(plan.vacuum), {
-                                                rows: plan.rows.toLocaleString(),
-                                                size: formatBytes(plan.freeSize),
-                                            })}
+                                            {t(
+                                                plan.mode === "none"
+                                                    ? "Database.Cleanup.EstimateNoVacuum"
+                                                    : plan.sizeAfter !== undefined
+                                                      ? "Database.Cleanup.EstimateWithSize"
+                                                      : "Database.Cleanup.Estimate",
+                                                {
+                                                    rows: plan.rows.toLocaleString(),
+                                                    size: formatBytes(plan.freeSize),
+                                                    after:
+                                                        plan.sizeAfter !== undefined
+                                                            ? formatBytes(plan.sizeAfter)
+                                                            : "",
+                                                },
+                                            )}
                                         </li>
-                                        <li>
-                                            {plan.vacuum
-                                                ? t("Database.Confirm.WithVacuum")
-                                                : t("Database.Confirm.WithoutVacuum")}
+                                        <li data-testid="database-confirm-mode">
+                                            {plan.mode === "online"
+                                                ? t("Database.Confirm.ModeOnline", {
+                                                      duration: duration(plan.onlineSeconds),
+                                                  })
+                                                : plan.mode === "restart"
+                                                  ? t("Database.Confirm.ModeRestart", {
+                                                        duration: duration(plan.restartSeconds),
+                                                    })
+                                                  : t("Database.Confirm.ModeNone")}
                                         </li>
                                     </ul>
                                 </AlertDialogDescription>
@@ -484,7 +625,23 @@ export default function DatabasePage() {
                                 <AlertDialogDescription asChild>
                                     <div className="space-y-2">
                                         <p>{t("Database.Confirm.Irreversible")}</p>
-                                        {plan.vacuum && <p>{t("Database.Confirm.VacuumLock")}</p>}
+                                        {plan.mode === "online" && (
+                                            <p data-testid="database-confirm-impact">
+                                                {t("Database.Confirm.OnlineImpact", {
+                                                    duration: duration(plan.onlineSeconds),
+                                                })}
+                                            </p>
+                                        )}
+                                        {plan.mode === "restart" && (
+                                            <>
+                                                <p data-testid="database-confirm-impact">
+                                                    {t("Database.Confirm.RestartImpact", {
+                                                        duration: duration(plan.restartSeconds),
+                                                    })}
+                                                </p>
+                                                <p>{t("Database.Confirm.RestartRequirement")}</p>
+                                            </>
+                                        )}
                                         <p>
                                             <Link
                                                 to="/dashboard/settings/backup"
@@ -512,6 +669,12 @@ export default function DatabasePage() {
                     )}
                 </AlertDialogContent>
             </AlertDialog>
+            <RestartOverlay
+                active={restartActive}
+                redirectTo="/dashboard/settings/database"
+                title={t("Database.Restart.Title")}
+                description={t("Database.Restart.Description")}
+            />
         </div>
     )
 }
@@ -536,6 +699,9 @@ function JobResult({ job }: { job: DatabaseCleanupJob }) {
                       })
                     : t("Database.Result.Failed", { rows: job.deleted_rows.toLocaleString() })}
             </p>
+            {ok && job.vacuum_mode === "restart" && job.vacuum_skipped === "" && (
+                <p className="text-muted-foreground mt-1">{t("Database.Result.RestartDone")}</p>
+            )}
             {ok && job.vacuum_skipped === "insufficient_disk" && (
                 <p className="text-destructive mt-1">{t("Database.Result.VacuumNoSpace")}</p>
             )}
