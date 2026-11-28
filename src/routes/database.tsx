@@ -44,6 +44,8 @@ import { toast } from "sonner"
 import useSWR, { useSWRConfig } from "swr"
 
 const JOB_POLL_MS = 2000
+/** Give up waiting for the dashboard to come back after this long. */
+const RESTART_TIMEOUT_MS = 5 * 60 * 1000
 const ESTIMATE_DEBOUNCE_MS = 300
 
 type RetentionChoice = (typeof RETENTION_PRESETS)[number] | "custom"
@@ -164,9 +166,24 @@ export default function DatabasePage() {
 
     // The dashboard restarts to compact: wait for it like after a restore. A
     // failed poll right after the deletion also means it already went down.
+    // The restart is confirmed once the server reported "restarting"; that state
+    // stays cached while the dashboard is down, so the overlay lasts until a poll
+    // returns this cleanup's final state. Before that, only several failed polls
+    // in a row (a missed "restarting") count, not a brief disconnect. Our own
+    // authenticated polling decides when it is over, not an anonymous probe that
+    // may still reach the old process.
     const restartActive =
         job?.state === "restarting" ||
-        (runningMode === "restart" && job?.state === "deleting" && pollFailures > 0)
+        (runningMode === "restart" &&
+            job?.state === "deleting" &&
+            pollFailures >= POLL_FAILURE_LIMIT)
+    const [restartTimedOut, setRestartTimedOut] = useState(false)
+    useEffect(() => {
+        setRestartTimedOut(false)
+        if (!restartActive) return
+        const timer = setTimeout(() => setRestartTimedOut(true), RESTART_TIMEOUT_MS)
+        return () => clearTimeout(timer)
+    }, [restartActive])
 
     if (loading) return null
     if (!isAdmin) return <Navigate to="/dashboard/settings/api-tokens" replace />
@@ -222,9 +239,12 @@ export default function DatabasePage() {
 
     function pollNotice(): string | null {
         if (!running || !pollError || restartActive) return null
-        // An online compaction locks the database: stalls are expected, say so at once.
+        // An online compaction locks the database: stalls are expected, say so at
+        // once. The lock can come before the poll that would report "vacuuming".
         if (runningMode === "online" && job?.state === "vacuuming")
             return t("Database.Cleanup.PollFailedOnline")
+        if (runningMode === "online" && job?.state === "deleting")
+            return t("Database.Cleanup.PollFailedMaybeVacuuming")
         if (pollFailures < POLL_FAILURE_LIMIT) return null
         return t("Database.Cleanup.PollFailed", { error: errorText(pollError) })
     }
@@ -678,7 +698,9 @@ export default function DatabasePage() {
             </AlertDialog>
             <RestartOverlay
                 active={restartActive}
-                redirectTo="/dashboard/settings/database"
+                watch={false}
+                timedOut={restartTimedOut}
+                redirectTo="/dashboard/login"
                 title={t("Database.Restart.Title")}
                 description={t("Database.Restart.Description")}
             />

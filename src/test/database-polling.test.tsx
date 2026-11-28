@@ -29,7 +29,8 @@ function job(state: DatabaseCleanupJob["state"]): DatabaseCleanupJob {
     return {
         state,
         retention_days: 30,
-        vacuum: true,
+        // no compaction: the generic failure handling; tests set vacuum_mode otherwise
+        vacuum: false,
         deleted_rows: 0,
         freed_size: 0,
         vacuum_skipped: "",
@@ -203,17 +204,105 @@ test("a failed poll during an online compaction explains the stall at once", asy
     expect(screen.getByTestId("database-job-result")).toBeTruthy()
 })
 
-test("a restart cleanup whose dashboard goes down shows the restart overlay", async () => {
+const restartJob = (
+    state: DatabaseCleanupJob["state"],
+    over: Partial<DatabaseCleanupJob> = {},
+) => ({
+    ...usage(state),
+    job: { ...job(state), vacuum_mode: "restart" as const, ...over },
+})
+const overlay = () => screen.queryByText("Database.Restart.Title")
+
+test("a brief disconnect while deleting does not count as the restart", async () => {
+    mocks.get.mockResolvedValueOnce(restartJob("deleting"))
+    renderPage()
+    await tick(0)
+    mocks.get.mockImplementationOnce(locked).mockImplementationOnce(locked)
+    await tick(2000)
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    // back with the deletion still going: nothing happened
+    mocks.get.mockResolvedValue(restartJob("deleting"))
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(screen.getByText("Database.Cleanup.Deleting")).toBeTruthy()
+})
+
+test("a missed restarting state is caught after several failed polls in a row", async () => {
+    mocks.get.mockResolvedValueOnce(restartJob("deleting"))
+    renderPage()
+    await tick(0)
+    mocks.get.mockImplementation(locked)
+    await tick(2000)
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    await tick(2000)
+    expect(overlay()).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+    // the dashboard is back with the result of this cleanup
+    mocks.get.mockResolvedValue(
+        restartJob("succeeded", { deleted_rows: 10, finished_at: "2000-01-01T00:00:00Z" }),
+    )
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(screen.getByTestId("database-job-result").textContent).toContain(
+        "Database.Result.RestartDone",
+    )
+})
+
+test("the overlay lasts until this cleanup's final state, not while the old process answers", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }))
+    vi.stubGlobal("fetch", fetchSpy)
+    mocks.get.mockResolvedValue(restartJob("restarting"))
+    renderPage()
+    await tick(0)
+    expect(overlay()).toBeTruthy()
+    // the old process keeps answering "restarting" for a while: keep waiting
+    await tick(20000)
+    expect(overlay()).toBeTruthy()
+    // then it goes down: still waiting, no error shown
+    mocks.get.mockImplementation(locked)
+    await tick(20000)
+    expect(overlay()).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+    // the anonymous probe of the backup restore is not used here
+    expect(fetchSpy).not.toHaveBeenCalled()
+    mocks.get.mockResolvedValue(
+        restartJob("failed", { error: "VACUUM failed", finished_at: "2000-01-01T00:00:00Z" }),
+    )
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(screen.getByTestId("database-job-result").textContent).toContain("VACUUM failed")
+    vi.unstubAllGlobals()
+})
+
+test("a dashboard that does not come back ends in the timeout message", async () => {
+    mocks.get.mockResolvedValueOnce(restartJob("restarting"))
+    renderPage()
+    await tick(0)
+    mocks.get.mockImplementation(locked)
+    await tick(4 * 60 * 1000)
+    expect(screen.queryByText("Backup.Restart.Timeout")).toBeNull()
+    await tick(60 * 1000 + 2000)
+    expect(screen.getByText("Backup.Restart.Timeout")).toBeTruthy()
+    expect(screen.getByText("Backup.Restart.GoToLogin")).toBeTruthy()
+})
+
+test("a failed poll while an online cleanup still reads as deleting says it may be compacting", async () => {
     mocks.get.mockResolvedValueOnce({
         ...usage("deleting"),
-        job: { ...job("deleting"), vacuum_mode: "restart" },
+        job: { ...job("deleting"), vacuum_mode: "online" },
     })
     renderPage()
     await tick(0)
-    expect(screen.queryByText("Database.Restart.Title")).toBeNull()
-    // the restarting state was missed: the next poll already fails
-    mocks.get.mockImplementation(locked)
+    mocks.get.mockImplementationOnce(locked)
     await tick(2000)
-    expect(screen.getByText("Database.Restart.Title")).toBeTruthy()
+    expect(screen.getByText("Database.Cleanup.PollFailedMaybeVacuuming")).toBeTruthy()
+    mocks.get.mockResolvedValue({
+        ...usage("vacuuming"),
+        job: { ...job("vacuuming"), vacuum_mode: "online" },
+    })
+    await tick(2000)
     expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.getByText("Database.Cleanup.Vacuuming")).toBeTruthy()
 })

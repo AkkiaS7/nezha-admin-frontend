@@ -634,7 +634,8 @@
             "Finished": "Cleanup finished",
             "Failed": "Cleanup failed",
             "PollFailed": "Cannot get the cleanup status: {{error}}. Still retrying; the cleanup continues on the dashboard.",
-            "PollFailedOnline": "Compacting the database: the dashboard may not respond or may ask you to sign in again for a while. It recovers by itself when compaction ends."
+            "PollFailedOnline": "Compacting the database: the dashboard may not respond or may ask you to sign in again for a while. It recovers by itself when compaction ends.",
+            "PollFailedMaybeVacuuming": "The cleanup may have moved on to compaction: the dashboard may not respond or may ask you to sign in again for a while. It recovers by itself when compaction ends."
         },
         "Mode": {
             "Title": "Compaction",
@@ -684,7 +685,7 @@
         },
         "Restart": {
             "Title": "Restarting to compact the database",
-            "Description": "The dashboard restarts and compacts the database while starting. This page reloads with the result when it is back."
+            "Description": "The dashboard restarts and compacts the database while starting. The result shows here when it is back."
         }
     }
 }

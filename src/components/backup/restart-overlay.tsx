@@ -56,6 +56,12 @@ export interface RestartOverlayProps {
     redirectTo?: string
     title?: string
     description?: string
+    /**
+     * false: the caller decides when the restart is over (it unmounts or
+     * deactivates the overlay) and when it timed out; no probe, no redirect.
+     */
+    watch?: boolean
+    timedOut?: boolean
 }
 
 export function RestartOverlay({
@@ -63,12 +69,15 @@ export function RestartOverlay({
     redirectTo = "/dashboard/login",
     title,
     description,
+    watch = true,
+    timedOut: timedOutProp = false,
 }: RestartOverlayProps) {
     const { t } = useTranslation()
-    const [timedOut, setTimedOut] = useState(false)
+    const [probeTimedOut, setTimedOut] = useState(false)
+    const timedOut = watch ? probeTimedOut : timedOutProp
 
     useEffect(() => {
-        if (!active) return
+        if (!active || !watch) return
         setTimedOut(false)
         const ctrl = new AbortController()
         void waitForRestart({ signal: ctrl.signal }).then((ok) => {
@@ -77,7 +86,7 @@ export function RestartOverlay({
             else setTimedOut(true)
         })
         return () => ctrl.abort()
-    }, [active, redirectTo])
+    }, [active, redirectTo, watch])
 
     if (!active) return null
     return (
