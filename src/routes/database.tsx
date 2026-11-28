@@ -3,6 +3,7 @@ import {
     DATABASE_USAGE_KEY,
     DatabaseCleanupJob,
     DatabaseUsage,
+    POLL_FAILURE_LIMIT,
     RETENTION_DEFAULT_DAYS,
     RETENTION_FULL_CHART_DAYS,
     RETENTION_MAX_DAYS,
@@ -70,9 +71,31 @@ export default function DatabasePage() {
     const { profile, loading } = useAuth()
     const isAdmin = profile?.role === 0
 
+    // While a cleanup runs, a single failed poll (e.g. the database is briefly
+    // locked by VACUUM) keeps the last state instead of flashing an error;
+    // only consecutive failures surface.
+    const lastUsage = useRef<DatabaseUsage | undefined>(undefined)
+    const pollFailures = useRef(0)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
-        () => getDatabaseUsage(),
+        async () => {
+            try {
+                const next = await getDatabaseUsage()
+                lastUsage.current = next
+                pollFailures.current = 0
+                return next
+            } catch (e) {
+                const prev = lastUsage.current
+                if (
+                    prev &&
+                    isJobRunning(prev.job.state) &&
+                    !isUnsupportedError(e) &&
+                    ++pollFailures.current < POLL_FAILURE_LIMIT
+                )
+                    return prev
+                throw e
+            }
+        },
         {
             // Poll only while a cleanup is in flight.
             refreshInterval: (data) => (isJobRunning(data?.job.state) ? JOB_POLL_MS : 0),
@@ -175,7 +198,9 @@ export default function DatabasePage() {
                     </p>
                 ) : (
                     <p className="text-destructive text-sm" role="alert">
-                        {t("Results.ErrorFetchingResource", { error: usage.error.message })}
+                        {running
+                            ? t("Database.Cleanup.PollFailed", { error: usage.error.message })
+                            : t("Results.ErrorFetchingResource", { error: usage.error.message })}
                     </p>
                 ))}
 

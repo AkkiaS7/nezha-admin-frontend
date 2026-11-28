@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     auth: { profile: { role: 0 } as { role: number } | undefined, loading: false },
     swr: vi.fn(),
     start: vi.fn(),
+    get: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
 }))
@@ -29,6 +30,7 @@ vi.mock("swr", () => ({ default: mocks.swr }))
 vi.mock("@/api/database", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/api/database")>()),
     startHistoryCleanup: mocks.start,
+    getDatabaseUsage: mocks.get,
 }))
 
 function makeJob(over: Partial<DatabaseCleanupJob> = {}): DatabaseCleanupJob {
@@ -339,4 +341,55 @@ test("a failed job shows its error and the deleted count", () => {
     expect(result).toContain("disk I/O error")
     // loading a page with an old result does not toast
     expect(mocks.error).not.toHaveBeenCalled()
+})
+
+function usageFetcher(): () => Promise<DatabaseUsage> {
+    return mocks.swr.mock.calls.find((c) => c[0] === "/api/v1/database/usage")![1]
+}
+
+test("a running cleanup tolerates single failed polls and reports consecutive ones", async () => {
+    renderPage()
+    const fetchUsage = usageFetcher()
+    const running = makeUsage({ job: makeJob({ state: "vacuuming", vacuum: true }) })
+    mocks.get.mockResolvedValueOnce(running)
+    await expect(fetchUsage()).resolves.toBe(running)
+
+    // The first two failures keep the last state, so polling goes on quietly.
+    mocks.get.mockRejectedValue(new Error("database is locked"))
+    await expect(fetchUsage()).resolves.toBe(running)
+    await expect(fetchUsage()).resolves.toBe(running)
+    // The third in a row is reported.
+    await expect(fetchUsage()).rejects.toThrow("database is locked")
+
+    // A success resets the count.
+    mocks.get.mockResolvedValueOnce(running)
+    await expect(fetchUsage()).resolves.toBe(running)
+    mocks.get.mockRejectedValueOnce(new Error("database is locked"))
+    await expect(fetchUsage()).resolves.toBe(running)
+})
+
+test("failed polls are reported at once when no cleanup is running or the endpoint is missing", async () => {
+    renderPage()
+    const fetchUsage = usageFetcher()
+    const idle = makeUsage()
+    mocks.get.mockResolvedValueOnce(idle)
+    await fetchUsage()
+    mocks.get.mockRejectedValueOnce(new Error("boom"))
+    await expect(fetchUsage()).rejects.toThrow("boom")
+
+    mocks.get.mockResolvedValueOnce(makeUsage({ job: makeJob({ state: "deleting" }) }))
+    await fetchUsage()
+    mocks.get.mockRejectedValueOnce(new FetcherError("404 Not Found", 404))
+    await expect(fetchUsage()).rejects.toThrow("404 Not Found")
+})
+
+test("an error during a running cleanup says the cleanup goes on", () => {
+    usage = {
+        data: makeUsage({ job: makeJob({ state: "deleting" }) }),
+        error: new Error("database is locked"),
+    }
+    renderPage()
+    expect(screen.getByRole("alert").textContent).toContain("Database.Cleanup.PollFailed")
+    // the progress stays visible
+    expect(screen.getByText("Database.Cleanup.Deleting")).toBeTruthy()
 })

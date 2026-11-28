@@ -625,7 +625,8 @@
             "Vacuuming": "Compacting…",
             "Started": "Cleanup started",
             "Finished": "Cleanup finished",
-            "Failed": "Cleanup failed"
+            "Failed": "Cleanup failed",
+            "PollFailed": "Cannot get the cleanup status: {{error}}. Still retrying; the cleanup continues on the dashboard."
         },
         "Confirm": {
             "Title": "Clean up service monitoring history?",
