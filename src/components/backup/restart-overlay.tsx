@@ -50,21 +50,43 @@ export async function waitForRestart({
     return false
 }
 
-export function RestartOverlay({ active }: { active: boolean }) {
+export interface RestartOverlayProps {
+    active: boolean
+    /** Where to go once the dashboard is back; a restore clears every session, hence login. */
+    redirectTo?: string
+    title?: string
+    description?: string
+    /**
+     * false: the caller decides when the restart is over (it unmounts or
+     * deactivates the overlay) and when it timed out; no probe, no redirect.
+     */
+    watch?: boolean
+    timedOut?: boolean
+}
+
+export function RestartOverlay({
+    active,
+    redirectTo = "/dashboard/login",
+    title,
+    description,
+    watch = true,
+    timedOut: timedOutProp = false,
+}: RestartOverlayProps) {
     const { t } = useTranslation()
-    const [timedOut, setTimedOut] = useState(false)
+    const [probeTimedOut, setTimedOut] = useState(false)
+    const timedOut = watch ? probeTimedOut : timedOutProp
 
     useEffect(() => {
-        if (!active) return
+        if (!active || !watch) return
         setTimedOut(false)
         const ctrl = new AbortController()
         void waitForRestart({ signal: ctrl.signal }).then((ok) => {
             if (ctrl.signal.aborted) return
-            if (ok) window.location.assign("/dashboard/login")
+            if (ok) window.location.assign(redirectTo)
             else setTimedOut(true)
         })
         return () => ctrl.abort()
-    }, [active])
+    }, [active, redirectTo, watch])
 
     if (!active) return null
     return (
@@ -76,16 +98,16 @@ export function RestartOverlay({ active }: { active: boolean }) {
             {timedOut ? (
                 <>
                     <p className="max-w-md text-sm">{t("Backup.Restart.Timeout")}</p>
-                    <Button onClick={() => window.location.assign("/dashboard/login")}>
+                    <Button onClick={() => window.location.assign(redirectTo)}>
                         {t("Backup.Restart.GoToLogin")}
                     </Button>
                 </>
             ) : (
                 <>
                     <Loader2 className="h-8 w-8 animate-spin" />
-                    <p className="text-lg font-semibold">{t("Backup.Restart.Title")}</p>
+                    <p className="text-lg font-semibold">{title ?? t("Backup.Restart.Title")}</p>
                     <p className="text-muted-foreground max-w-md text-sm">
-                        {t("Backup.Restart.Description")}
+                        {description ?? t("Backup.Restart.Description")}
                     </p>
                 </>
             )}

@@ -593,6 +593,8 @@
         "Description": "查看 SQLite 数据库占用，清理较早的服务监控历史，以减小数据库和备份体积、缩短恢复耗时。",
         "Unsupported": "当前面板版本不支持数据库管理，请升级面板后使用。",
         "Unknown": "未知",
+        "Duration": "约 {{seconds}} 秒",
+        "DurationUnknown": "未知时长",
         "HistoryUnavailable": "服务监控历史没有存放在 SQLite 中（例如已启用 TSDB），无法在这里清理，其保留期由 TSDB 设置管理。",
         "Usage": {
             "Title": "数据库占用",
@@ -615,39 +617,76 @@
             "Estimating": "正在计算可释放的空间…",
             "NothingToClean": "没有可清理的记录。",
             "Estimate": "将删除约 {{rows}} 条记录，预计释放约 {{size}}。",
+            "EstimateWithSize": "将删除约 {{rows}} 条记录，预计释放约 {{size}}，压缩后约 {{after}}。",
             "EstimateNoVacuum": "将删除约 {{rows}} 条记录。不压缩时文件不会变小，约 {{size}} 的空间要在压缩后才会释放。",
             "Approximate": "（记录数为近似值）",
-            "Vacuum": "清理后立即压缩数据库（VACUUM）",
-            "VacuumHint": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失；需要约 {{required}} 临时磁盘空间（当前剩余 {{free}}）。",
-            "VacuumHintNoFree": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失；需要约 {{required}} 临时磁盘空间（无法获取磁盘剩余空间）。",
-            "VacuumHintBase": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失。",
-            "VacuumHintPending": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失；正在计算所需的临时磁盘空间…",
-            "VacuumHintUnknown": "不压缩时文件不会变小。压缩期间会短暂锁库，期间写入的监控数据可能丢失；估算失败（原因见上方），无法得知所需的临时磁盘空间。",
-            "VacuumNoSpace": "磁盘空间不足，无法压缩：需要约 {{required}}，当前剩余 {{free}}。将只删除记录。",
+            "VacuumHint": "压缩需要约 {{required}} 临时磁盘空间（当前剩余 {{free}}）。",
+            "VacuumHintNoFree": "压缩需要约 {{required}} 临时磁盘空间（无法获取磁盘剩余空间）。",
+            "VacuumHintBase": "不压缩时文件不会变小。",
+            "VacuumHintPending": "正在计算压缩所需的临时磁盘空间…",
+            "VacuumHintUnknown": "估算失败（原因见上方），无法得知压缩所需的临时磁盘空间。",
+            "VacuumNoSpace": "磁盘空间不足，无法压缩：需要约 {{required}}，当前剩余 {{free}}。只能删除记录。",
             "Run": "清理",
             "Deleting": "删除中…",
             "Vacuuming": "压缩中…",
+            "Restarting": "重启中…",
             "Started": "已开始清理",
             "Finished": "清理完成",
             "Failed": "清理失败",
-            "PollFailed": "暂时无法获取清理状态：{{error}}。仍在重试，清理会在面板上继续进行。"
+            "PollFailed": "暂时无法获取清理状态：{{error}}。仍在重试，清理会在面板上继续进行。",
+            "PollFailedOnline": "正在压缩数据库，面板可能暂时无响应或需要重新登录，完成后会自动恢复。",
+            "PollFailedMaybeVacuuming": "清理可能已进入压缩阶段，面板可能暂时无响应或需要重新登录，完成后会自动恢复。"
+        },
+        "Mode": {
+            "Title": "压缩方式",
+            "online": "现场压缩",
+            "restart": "重启面板时压缩",
+            "none": "不压缩",
+            "Recommended": "建议",
+            "OnlineDetail": "预计{{duration}}。期间后台可能卡顿或需要重新登录，agent 上报的监控数据会丢失一部分。",
+            "OnlineDetailNoTime": "期间后台可能卡顿或需要重新登录，agent 上报的监控数据会丢失一部分。",
+            "RestartDetail": "面板重启并在启动时压缩，预计{{duration}}不可用；在线会话和 agent 之后会自动重连。",
+            "RestartDetailNoTime": "面板重启并在启动时压缩，期间不可用；在线会话和 agent 之后会自动重连。",
+            "RestartUnavailable": "不可用：当前环境无法自动重启面板，需要由 Docker 或 systemd 托管并配置自动重启。",
+            "NoneDetail": "只删除记录，文件大小不变。",
+            "ReasonShort": "清理后数据库较小，现场压缩预计{{online}}，建议现场压缩。",
+            "ReasonLong": "现场压缩预计会让后台卡顿{{online}}，还可能需要重新登录，建议重启面板时压缩（预计{{restart}}不可用）。",
+            "ReasonRestartUnavailable": "现场压缩预计会让后台卡顿{{online}}，还可能需要重新登录，但当前环境无法自动重启面板。建议在空闲时段现场压缩，或者不压缩。"
         },
         "Confirm": {
             "Title": "确定清理服务监控历史？",
-            "WithVacuum": "清理后压缩数据库",
-            "WithoutVacuum": "不压缩数据库",
             "Next": "继续",
             "FinalTitle": "再次确认",
             "Irreversible": "删除的历史无法恢复。如果以后可能用到，请先备份数据库。",
-            "VacuumLock": "压缩期间数据库被锁定，期间写入的监控数据可能丢失。",
             "GoBackup": "前往备份",
-            "Run": "删除历史"
+            "Run": "删除历史",
+            "ModeOnline": "现场压缩，预计{{duration}}",
+            "ModeOnlineNoTime": "现场压缩",
+            "ModeRestart": "重启面板并在启动时压缩，预计{{duration}}不可用",
+            "ModeRestartNoTime": "重启面板并在启动时压缩",
+            "ModeNone": "不压缩数据库",
+            "OnlineImpact": "现场压缩预计{{duration}}：期间后台可能卡顿、需要重新登录，agent 上报的监控数据会丢失一部分。",
+            "OnlineImpactNoTime": "现场压缩期间后台可能卡顿、需要重新登录，agent 上报的监控数据会丢失一部分。",
+            "RestartImpact": "面板会重启并在启动时压缩数据库，预计{{duration}}不可用；在线会话和 agent 连接会断开，之后自动重连。",
+            "RestartImpactNoTime": "面板会重启并在启动时压缩数据库，期间不可用；在线会话和 agent 连接会断开，之后自动重连。",
+            "RestartRequirement": "需要面板由 Docker 或 systemd 托管并配置了自动重启。面板只能识别运行环境，无法确认重启策略；没有配置自动重启时，面板退出后需要手动启动。"
         },
         "Result": {
             "Succeeded": "上次清理删除了 {{rows}} 条记录，释放了 {{size}}。",
             "Failed": "上次清理在删除 {{rows}} 条记录后失败，可以重新执行。",
             "VacuumNoSpace": "磁盘空间不足，已跳过压缩。",
-            "VacuumNotRequested": "未选择压缩，文件大小没有变化。"
+            "VacuumNotRequested": "未选择压缩，文件大小没有变化。",
+            "RestartDone": "已在面板重启时压缩数据库。"
+        },
+        "Error": {
+            "Unauthorized": "暂时无法验证登录状态，面板可能正在压缩数据库。请稍后重试；如果一直出现，请重新登录。",
+            "Forbidden": "没有执行此操作的权限。",
+            "Unavailable": "面板暂时没有响应（可能正在重启或忙碌），请稍后重试。"
+        },
+        "Restart": {
+            "Title": "正在重启面板并压缩数据库",
+            "Description": "面板重启后会在启动时压缩数据库，恢复后这里会显示结果。",
+            "ResultMissing": "面板已经恢复，但没有读到本次清理的结果（结果文件可能丢失）。删除和压缩可能已经完成，请查看上方的数据库占用。"
         }
     }
 }

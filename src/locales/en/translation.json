@@ -593,6 +593,8 @@
         "Description": "View the SQLite database size and clean up old service monitoring history to reduce the database, backup size and restore time.",
         "Unsupported": "This dashboard version does not support database management. Upgrade the dashboard to use this page.",
         "Unknown": "Unknown",
+        "Duration": "about {{seconds}} s",
+        "DurationUnknown": "an unknown time",
         "HistoryUnavailable": "Service monitoring history is not stored in SQLite (for example, TSDB is enabled), so it cannot be cleaned up here. Its retention is managed by the TSDB settings.",
         "Usage": {
             "Title": "Database usage",
@@ -615,39 +617,76 @@
             "Estimating": "Calculating the space to free…",
             "NothingToClean": "There are no records to clean up.",
             "Estimate": "About {{rows}} records will be deleted, freeing about {{size}}.",
+            "EstimateWithSize": "About {{rows}} records will be deleted, freeing about {{size}}; about {{after}} after compaction.",
             "EstimateNoVacuum": "About {{rows}} records will be deleted. Without compaction the file does not shrink; about {{size}} is freed only after a compaction.",
             "Approximate": "(record count is approximate)",
-            "Vacuum": "Compact the database after cleanup (VACUUM)",
-            "VacuumHint": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost. It needs about {{required}} of temporary disk space (currently free: {{free}}).",
-            "VacuumHintNoFree": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost. It needs about {{required}} of temporary disk space; the free disk space could not be determined.",
-            "VacuumHintBase": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost.",
-            "VacuumHintPending": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost. Calculating the temporary disk space it needs…",
-            "VacuumHintUnknown": "Without compaction the file does not shrink. Compaction locks the database briefly, and monitoring data written meanwhile may be lost. The temporary disk space it needs is unknown because the estimate failed (see above).",
-            "VacuumNoSpace": "Not enough disk space to compact: about {{required}} is needed, {{free}} is free. Only the records will be deleted.",
+            "VacuumHint": "Compaction needs about {{required}} of temporary disk space (currently free: {{free}}).",
+            "VacuumHintNoFree": "Compaction needs about {{required}} of temporary disk space; the free disk space could not be determined.",
+            "VacuumHintBase": "Without compaction the file does not shrink.",
+            "VacuumHintPending": "Calculating the temporary disk space compaction needs…",
+            "VacuumHintUnknown": "The temporary disk space compaction needs is unknown because the estimate failed (see above).",
+            "VacuumNoSpace": "Not enough disk space to compact: about {{required}} is needed, {{free}} is free. Only the records can be deleted.",
             "Run": "Clean up",
             "Deleting": "Deleting…",
             "Vacuuming": "Compacting…",
+            "Restarting": "Restarting…",
             "Started": "Cleanup started",
             "Finished": "Cleanup finished",
             "Failed": "Cleanup failed",
-            "PollFailed": "Cannot get the cleanup status: {{error}}. Still retrying; the cleanup continues on the dashboard."
+            "PollFailed": "Cannot get the cleanup status: {{error}}. Still retrying; the cleanup continues on the dashboard.",
+            "PollFailedOnline": "Compacting the database: the dashboard may not respond or may ask you to sign in again for a while. It recovers by itself when compaction ends.",
+            "PollFailedMaybeVacuuming": "The cleanup may have moved on to compaction: the dashboard may not respond or may ask you to sign in again for a while. It recovers by itself when compaction ends."
+        },
+        "Mode": {
+            "Title": "Compaction",
+            "online": "Compact now",
+            "restart": "Compact while restarting the dashboard",
+            "none": "Do not compact",
+            "Recommended": "Recommended",
+            "OnlineDetail": "Takes {{duration}}. Meanwhile the dashboard may stall or ask you to sign in again, and some monitoring data reported by agents is lost.",
+            "OnlineDetailNoTime": "Meanwhile the dashboard may stall or ask you to sign in again, and some monitoring data reported by agents is lost.",
+            "RestartDetail": "The dashboard restarts and compacts while starting; it is unavailable for {{duration}}. Sessions and agents reconnect afterwards.",
+            "RestartDetailNoTime": "The dashboard restarts and compacts while starting, unavailable meanwhile. Sessions and agents reconnect afterwards.",
+            "RestartUnavailable": "Unavailable: the dashboard cannot restart itself here. It must run under Docker or systemd with automatic restart.",
+            "NoneDetail": "Only the records are deleted; the file does not shrink.",
+            "ReasonShort": "The database is small after the cleanup: compacting now takes {{online}}, so compacting now is recommended.",
+            "ReasonLong": "Compacting now would stall the dashboard for {{online}} and may sign users out, so compacting while restarting is recommended (unavailable for {{restart}}).",
+            "ReasonRestartUnavailable": "Compacting now would stall the dashboard for {{online}} and may sign users out, but this dashboard cannot restart itself. Compact now at a quiet time, or do not compact."
         },
         "Confirm": {
             "Title": "Clean up service monitoring history?",
-            "WithVacuum": "Compact the database afterwards",
-            "WithoutVacuum": "Do not compact the database",
             "Next": "Continue",
             "FinalTitle": "Confirm again",
             "Irreversible": "Deleted history cannot be recovered. Back up the database first if you may need it.",
-            "VacuumLock": "While compacting, the database is locked and monitoring data written meanwhile may be lost.",
             "GoBackup": "Go to backups",
-            "Run": "Delete history"
+            "Run": "Delete history",
+            "ModeOnline": "Compact now, taking {{duration}}",
+            "ModeOnlineNoTime": "Compact now",
+            "ModeRestart": "Restart the dashboard and compact while starting; unavailable for {{duration}}",
+            "ModeRestartNoTime": "Restart the dashboard and compact while starting",
+            "ModeNone": "Do not compact the database",
+            "OnlineImpact": "Compacting takes {{duration}}. Meanwhile the dashboard may stall or ask you to sign in again, and some monitoring data reported by agents is lost.",
+            "OnlineImpactNoTime": "While compacting, the dashboard may stall or ask you to sign in again, and some monitoring data reported by agents is lost.",
+            "RestartImpact": "The dashboard restarts and compacts the database while starting, unavailable for {{duration}}. Signed-in sessions and agents are disconnected and reconnect automatically.",
+            "RestartImpactNoTime": "The dashboard restarts and compacts the database while starting, unavailable meanwhile. Signed-in sessions and agents are disconnected and reconnect automatically.",
+            "RestartRequirement": "This needs the dashboard to run under Docker or systemd with automatic restart. The dashboard can only detect the environment, not the restart policy: without automatic restart it has to be started by hand."
         },
         "Result": {
             "Succeeded": "Last cleanup deleted {{rows}} records and freed {{size}}.",
             "Failed": "Last cleanup failed after deleting {{rows}} records. You can run it again.",
             "VacuumNoSpace": "Compaction was skipped because of insufficient disk space.",
-            "VacuumNotRequested": "Compaction was not requested, so the file size did not change."
+            "VacuumNotRequested": "Compaction was not requested, so the file size did not change.",
+            "RestartDone": "The database was compacted while the dashboard restarted."
+        },
+        "Error": {
+            "Unauthorized": "Your sign-in could not be verified right now, possibly because the dashboard is busy compacting the database. Try again shortly; if it keeps happening, sign in again.",
+            "Forbidden": "You do not have permission for this operation.",
+            "Unavailable": "The dashboard is not responding right now (it may be restarting or busy). Try again shortly."
+        },
+        "Restart": {
+            "Title": "Restarting to compact the database",
+            "Description": "The dashboard restarts and compacts the database while starting. The result shows here when it is back.",
+            "ResultMissing": "The dashboard is back, but the result of this cleanup could not be read (the result file may be lost). The deletion and compaction may have finished; check the database usage above."
         }
     }
 }

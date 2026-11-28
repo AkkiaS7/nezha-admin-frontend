@@ -569,6 +569,8 @@
         "Description": "檢視 SQLite 資料庫佔用，清理較早的服務監控歷史，以減小資料庫和備份體積、縮短還原耗時。",
         "Unsupported": "目前面板版本不支援資料庫管理，請升級面板後使用。",
         "Unknown": "未知",
+        "Duration": "約 {{seconds}} 秒",
+        "DurationUnknown": "未知時長",
         "HistoryUnavailable": "服務監控歷史沒有存放在 SQLite 中（例如已啟用 TSDB），無法在這裡清理，其保留期由 TSDB 設定管理。",
         "Usage": {
             "Title": "資料庫佔用",
@@ -591,39 +593,76 @@
             "Estimating": "正在計算可釋放的空間…",
             "NothingToClean": "沒有可清理的記錄。",
             "Estimate": "將刪除約 {{rows}} 筆記錄，預計釋放約 {{size}}。",
+            "EstimateWithSize": "將刪除約 {{rows}} 筆記錄，預計釋放約 {{size}}，壓縮後約 {{after}}。",
             "EstimateNoVacuum": "將刪除約 {{rows}} 筆記錄。不壓縮時檔案不會變小，約 {{size}} 的空間要在壓縮後才會釋放。",
             "Approximate": "（記錄數為近似值）",
-            "Vacuum": "清理後立即壓縮資料庫（VACUUM）",
-            "VacuumHint": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失；需要約 {{required}} 暫存磁碟空間（目前剩餘 {{free}}）。",
-            "VacuumHintNoFree": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失；需要約 {{required}} 暫存磁碟空間（無法取得磁碟剩餘空間）。",
-            "VacuumHintBase": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失。",
-            "VacuumHintPending": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失；正在計算所需的暫存磁碟空間…",
-            "VacuumHintUnknown": "不壓縮時檔案不會變小。壓縮期間會短暫鎖定資料庫，期間寫入的監控資料可能遺失；估算失敗（原因見上方），無法得知所需的暫存磁碟空間。",
-            "VacuumNoSpace": "磁碟空間不足，無法壓縮：需要約 {{required}}，目前剩餘 {{free}}。將只刪除記錄。",
+            "VacuumHint": "壓縮需要約 {{required}} 暫存磁碟空間（目前剩餘 {{free}}）。",
+            "VacuumHintNoFree": "壓縮需要約 {{required}} 暫存磁碟空間（無法取得磁碟剩餘空間）。",
+            "VacuumHintBase": "不壓縮時檔案不會變小。",
+            "VacuumHintPending": "正在計算壓縮所需的暫存磁碟空間…",
+            "VacuumHintUnknown": "估算失敗（原因見上方），無法得知壓縮所需的暫存磁碟空間。",
+            "VacuumNoSpace": "磁碟空間不足，無法壓縮：需要約 {{required}}，目前剩餘 {{free}}。只能刪除記錄。",
             "Run": "清理",
             "Deleting": "刪除中…",
             "Vacuuming": "壓縮中…",
+            "Restarting": "重新啟動中…",
             "Started": "已開始清理",
             "Finished": "清理完成",
             "Failed": "清理失敗",
-            "PollFailed": "暫時無法取得清理狀態：{{error}}。仍在重試，清理會在面板上繼續進行。"
+            "PollFailed": "暫時無法取得清理狀態：{{error}}。仍在重試，清理會在面板上繼續進行。",
+            "PollFailedOnline": "正在壓縮資料庫，面板可能暫時沒有回應或需要重新登入，完成後會自動恢復。",
+            "PollFailedMaybeVacuuming": "清理可能已進入壓縮階段，面板可能暫時沒有回應或需要重新登入，完成後會自動恢復。"
+        },
+        "Mode": {
+            "Title": "壓縮方式",
+            "online": "現場壓縮",
+            "restart": "重新啟動面板時壓縮",
+            "none": "不壓縮",
+            "Recommended": "建議",
+            "OnlineDetail": "預計{{duration}}。期間後台可能卡頓或需要重新登入，agent 回報的監控資料會遺失一部分。",
+            "OnlineDetailNoTime": "期間後台可能卡頓或需要重新登入，agent 回報的監控資料會遺失一部分。",
+            "RestartDetail": "面板重新啟動並在啟動時壓縮，預計{{duration}}無法使用；線上工作階段和 agent 之後會自動重新連線。",
+            "RestartDetailNoTime": "面板重新啟動並在啟動時壓縮，期間無法使用；線上工作階段和 agent 之後會自動重新連線。",
+            "RestartUnavailable": "無法使用：目前環境無法自動重新啟動面板，需要由 Docker 或 systemd 託管並設定自動重新啟動。",
+            "NoneDetail": "只刪除記錄，檔案大小不變。",
+            "ReasonShort": "清理後資料庫較小，現場壓縮預計{{online}}，建議現場壓縮。",
+            "ReasonLong": "現場壓縮預計會讓後台卡頓{{online}}，還可能需要重新登入，建議重新啟動面板時壓縮（預計{{restart}}無法使用）。",
+            "ReasonRestartUnavailable": "現場壓縮預計會讓後台卡頓{{online}}，還可能需要重新登入，但目前環境無法自動重新啟動面板。建議在空閒時段現場壓縮，或者不壓縮。"
         },
         "Confirm": {
             "Title": "確定清理服務監控歷史？",
-            "WithVacuum": "清理後壓縮資料庫",
-            "WithoutVacuum": "不壓縮資料庫",
             "Next": "繼續",
             "FinalTitle": "再次確認",
             "Irreversible": "刪除的歷史無法復原。如果以後可能用到，請先備份資料庫。",
-            "VacuumLock": "壓縮期間資料庫被鎖定，期間寫入的監控資料可能遺失。",
             "GoBackup": "前往備份",
-            "Run": "刪除歷史"
+            "Run": "刪除歷史",
+            "ModeOnline": "現場壓縮，預計{{duration}}",
+            "ModeOnlineNoTime": "現場壓縮",
+            "ModeRestart": "重新啟動面板並在啟動時壓縮，預計{{duration}}無法使用",
+            "ModeRestartNoTime": "重新啟動面板並在啟動時壓縮",
+            "ModeNone": "不壓縮資料庫",
+            "OnlineImpact": "現場壓縮預計{{duration}}：期間後台可能卡頓、需要重新登入，agent 回報的監控資料會遺失一部分。",
+            "OnlineImpactNoTime": "現場壓縮期間後台可能卡頓、需要重新登入，agent 回報的監控資料會遺失一部分。",
+            "RestartImpact": "面板會重新啟動並在啟動時壓縮資料庫，預計{{duration}}無法使用；線上工作階段和 agent 連線會中斷，之後自動重新連線。",
+            "RestartImpactNoTime": "面板會重新啟動並在啟動時壓縮資料庫，期間無法使用；線上工作階段和 agent 連線會中斷，之後自動重新連線。",
+            "RestartRequirement": "需要面板由 Docker 或 systemd 託管並設定了自動重新啟動。面板只能識別執行環境，無法確認重新啟動策略；沒有設定自動重新啟動時，面板結束後需要手動啟動。"
         },
         "Result": {
             "Succeeded": "上次清理刪除了 {{rows}} 筆記錄，釋放了 {{size}}。",
             "Failed": "上次清理在刪除 {{rows}} 筆記錄後失敗，可以重新執行。",
             "VacuumNoSpace": "磁碟空間不足，已略過壓縮。",
-            "VacuumNotRequested": "未選擇壓縮，檔案大小沒有變化。"
+            "VacuumNotRequested": "未選擇壓縮，檔案大小沒有變化。",
+            "RestartDone": "已在面板重新啟動時壓縮資料庫。"
+        },
+        "Error": {
+            "Unauthorized": "暫時無法驗證登入狀態，面板可能正在壓縮資料庫。請稍後重試；如果一直出現，請重新登入。",
+            "Forbidden": "沒有執行此操作的權限。",
+            "Unavailable": "面板暫時沒有回應（可能正在重新啟動或忙碌），請稍後重試。"
+        },
+        "Restart": {
+            "Title": "正在重新啟動面板並壓縮資料庫",
+            "Description": "面板重新啟動後會在啟動時壓縮資料庫，恢復後這裡會顯示結果。",
+            "ResultMissing": "面板已經恢復，但沒有讀到本次清理的結果（結果檔案可能遺失）。刪除和壓縮可能已經完成，請查看上方的資料庫佔用。"
         }
     }
 }

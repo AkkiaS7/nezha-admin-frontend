@@ -3,9 +3,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { FetcherError } from "../api/api"
 import {
     DatabaseUsage,
+    databaseErrorKind,
+    defaultVacuumMode,
     getDatabaseUsage,
     isJobRunning,
     isUnsupportedError,
+    jobVacuumMode,
     parseRetentionDays,
     startHistoryCleanup,
     vacuumBlockedByDisk,
@@ -73,13 +76,62 @@ test("starting a cleanup posts the body with the CSRF header", async () => {
     const fn = respondWith(JSON.stringify({ success: true, data: { ...job, state: "deleting" } }), {
         status: 200,
     })
-    const started = await startHistoryCleanup({ retention_days: 30, vacuum: true })
+    const started = await startHistoryCleanup(30, "restart")
     expect(started.state).toBe("deleting")
     const [path, init] = fn.mock.calls[0] as unknown as [string, RequestInit]
     expect(path).toBe("/api/v1/database/history-cleanup")
     expect(init.method).toBe("POST")
-    expect(JSON.parse(String(init.body))).toEqual({ retention_days: 30, vacuum: true })
+    // vacuum mirrors the mode for dashboards that predate vacuum_mode
+    expect(JSON.parse(String(init.body))).toEqual({
+        retention_days: 30,
+        vacuum_mode: "restart",
+        vacuum: true,
+    })
     expect((init.headers as Record<string, string>)["X-CSRF-Token"]).toBe("example-token")
+
+    await startHistoryCleanup(90, "none")
+    const body = JSON.parse(
+        String(
+            (fn.mock.calls[fn.mock.calls.length - 1] as unknown as [string, RequestInit])[1].body,
+        ),
+    )
+    expect(body).toEqual({ retention_days: 90, vacuum_mode: "none", vacuum: false })
+})
+
+test("the job's mode falls back to the vacuum flag of older dashboards", () => {
+    expect(jobVacuumMode({ ...job, vacuum: true })).toBe("online")
+    expect(jobVacuumMode({ ...job, vacuum: false })).toBe("none")
+    expect(jobVacuumMode({ ...job, vacuum: true, vacuum_mode: "restart" })).toBe("restart")
+    expect(jobVacuumMode({ ...job, vacuum: false, vacuum_mode: "" })).toBe("none")
+    expect(isJobRunning("restarting")).toBe(true)
+})
+
+test("the preselected mode follows the recommendation only where it can run", () => {
+    const estimate = {
+        retention_days: 30,
+        deletable_rows: 10,
+        estimated_free_size: 1,
+        vacuum_required_size: 100,
+        approximate: false,
+        recommended_vacuum_mode: "restart" as const,
+        recommendation_reason: "long" as const,
+    }
+    expect(defaultVacuumMode(usage({ estimate, restart_available: true }))).toBe("restart")
+    expect(defaultVacuumMode(usage({ estimate, restart_available: false }))).toBe("online")
+    expect(
+        defaultVacuumMode(
+            usage({
+                estimate: { ...estimate, recommended_vacuum_mode: "online" },
+                restart_available: true,
+            }),
+        ),
+    ).toBe("online")
+    // not enough disk for any compaction
+    expect(defaultVacuumMode(usage({ estimate, restart_available: true, disk_free: 50 }))).toBe(
+        "none",
+    )
+    // older dashboards: no recommendation
+    expect(defaultVacuumMode(usage())).toBe("online")
 })
 
 test("a dashboard without the endpoint is recognised by the 404 status, not the text", async () => {
@@ -126,4 +178,16 @@ test("VACUUM is blocked only when the free disk space is known to be short", () 
     expect(vacuumBlockedByDisk(usage({ disk_free: 0, estimate }))).toBe(false)
     expect(vacuumBlockedByDisk(usage({ disk_free: 400 }))).toBe(false)
     expect(vacuumBlockedByDisk(undefined)).toBe(false)
+})
+
+test("raw auth codes and gateway failures map to friendly error kinds", () => {
+    expect(databaseErrorKind(new Error("ApiErrorUnauthorized"))).toBe("unauthorized")
+    expect(databaseErrorKind(new FetcherError("Unauthorized", 401))).toBe("unauthorized")
+    expect(databaseErrorKind(new Error("ApiErrorForbidden: scope"))).toBe("forbidden")
+    expect(databaseErrorKind(new FetcherError("HTTP 502", 502))).toBe("unavailable")
+    expect(databaseErrorKind(new FetcherError("HTTP 504", 504))).toBe("unavailable")
+    expect(databaseErrorKind(new TypeError("Failed to fetch"))).toBe("unavailable")
+    // the server's own (localized) messages are shown as they are
+    expect(databaseErrorKind(new Error("another database cleanup is in progress"))).toBeNull()
+    expect(databaseErrorKind(new FetcherError("boom", 500))).toBeNull()
 })
