@@ -38,7 +38,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Navigate } from "react-router-dom"
 import { toast } from "sonner"
-import useSWR from "swr"
+import useSWR, { useSWRConfig } from "swr"
 
 const JOB_POLL_MS = 2000
 const ESTIMATE_DEBOUNCE_MS = 300
@@ -71,29 +71,30 @@ export default function DatabasePage() {
     const { profile, loading } = useAuth()
     const isAdmin = profile?.role === 0
 
-    // While a cleanup runs, a single failed poll (e.g. the database is briefly
-    // locked by VACUUM) keeps the last state instead of flashing an error;
-    // only consecutive failures surface.
-    const lastUsage = useRef<DatabaseUsage | undefined>(undefined)
-    const pollFailures = useRef(0)
+    // While a cleanup runs, failed polls (e.g. the database briefly locked by
+    // VACUUM) never reach SWR: the fetcher keeps the cached state, so SWR stays
+    // on its regular refresh instead of error backoff, and the failures are
+    // counted here; the page only reports them after several in a row.
+    const { cache } = useSWRConfig()
+    const failures = useRef(0)
+    const [pollError, setPollError] = useState<Error | null>(null)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
         async () => {
             try {
                 const next = await getDatabaseUsage()
-                lastUsage.current = next
-                pollFailures.current = 0
+                failures.current = 0
+                setPollError(null)
                 return next
             } catch (e) {
-                const prev = lastUsage.current
-                if (
-                    prev &&
-                    isJobRunning(prev.job.state) &&
-                    !isUnsupportedError(e) &&
-                    ++pollFailures.current < POLL_FAILURE_LIMIT
-                )
-                    return prev
-                throw e
+                // Read SWR's cache, not render state: mutate() starts the
+                // revalidation before React re-renders with the POSTed job, and
+                // an earlier visit leaves a running job there as well.
+                const cur = cache.get(DATABASE_USAGE_KEY)?.data as DatabaseUsage | undefined
+                if (!cur || !isJobRunning(cur.job.state) || isUnsupportedError(e)) throw e
+                failures.current += 1
+                if (failures.current >= POLL_FAILURE_LIMIT) setPollError(e as Error)
+                return cur
             }
         },
         {
@@ -191,6 +192,12 @@ export default function DatabasePage() {
                 </p>
             </div>
 
+            {running && pollError && (
+                <p className="text-destructive text-sm" role="alert">
+                    {t("Database.Cleanup.PollFailed", { error: pollError.message })}
+                </p>
+            )}
+
             {usage.error &&
                 (isUnsupportedError(usage.error) ? (
                     <p className="text-muted-foreground text-sm" data-testid="database-unsupported">
@@ -198,9 +205,7 @@ export default function DatabasePage() {
                     </p>
                 ) : (
                     <p className="text-destructive text-sm" role="alert">
-                        {running
-                            ? t("Database.Cleanup.PollFailed", { error: usage.error.message })
-                            : t("Results.ErrorFetchingResource", { error: usage.error.message })}
+                        {t("Results.ErrorFetchingResource", { error: usage.error.message })}
                     </p>
                 ))}
 
