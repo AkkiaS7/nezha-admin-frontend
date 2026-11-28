@@ -46,6 +46,12 @@ import useSWR, { useSWRConfig } from "swr"
 const JOB_POLL_MS = 2000
 /** Give up waiting for the dashboard to come back after this long. */
 const RESTART_TIMEOUT_MS = 5 * 60 * 1000
+/**
+ * The new process loads the compaction result before it serves requests, so
+ * an idle job after the restart means the result was lost. Do not give up on
+ * one idle poll, but after this many in a row in a working dashboard.
+ */
+const RESTART_IDLE_POLLS = 10
 const ESTIMATE_DEBOUNCE_MS = 300
 
 type RetentionChoice = (typeof RETENTION_PRESETS)[number] | "custom"
@@ -86,6 +92,8 @@ export default function DatabasePage() {
     const [pollError, setPollError] = useState<Error | null>(null)
     // started_at of the cleanup whose restart we are waiting for (see below).
     const awaitingRestart = useRef<string | null>(null)
+    const idlePolls = useRef(0)
+    const [restartIdlePolls, setRestartIdlePolls] = useState(0)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
         async () => {
@@ -94,6 +102,11 @@ export default function DatabasePage() {
                 failures.current = 0
                 setPollFailures(0)
                 setPollError(null)
+                idlePolls.current =
+                    awaitingRestart.current !== null && next.job.state === "idle"
+                        ? idlePolls.current + 1
+                        : 0
+                setRestartIdlePolls(idlePolls.current)
                 return next
             } catch (e) {
                 // Read SWR's cache, not render state: mutate() starts the
@@ -195,18 +208,27 @@ export default function DatabasePage() {
     const suspectedRestart =
         runningMode === "restart" && job?.state === "deleting" && pollFailures >= POLL_FAILURE_LIMIT
     const [pendingRestart, setPendingRestart] = useState<string | null>(null)
+    const [restartResultMissing, setRestartResultMissing] = useState(false)
     awaitingRestart.current = pendingRestart
     useEffect(() => {
         if (!job) return
         if (pendingRestart === null) {
-            if (job.state === "restarting" || suspectedRestart) setPendingRestart(job.started_at)
+            if (job.state === "restarting" || suspectedRestart) {
+                setRestartResultMissing(false)
+                setPendingRestart(job.started_at)
+            }
+            return
+        }
+        if (restartIdlePolls >= RESTART_IDLE_POLLS) {
+            setPendingRestart(null)
+            setRestartResultMissing(true)
             return
         }
         if (pollFailures > 0 || job.started_at !== pendingRestart || job.state === "restarting")
             return
         setPendingRestart(null)
         announce(job)
-    }, [job, pollFailures, pendingRestart, suspectedRestart, announce])
+    }, [job, pollFailures, pendingRestart, suspectedRestart, restartIdlePolls, announce])
     const restartActive = pendingRestart !== null || job?.state === "restarting" || suspectedRestart
     const [restartTimedOut, setRestartTimedOut] = useState(false)
     useEffect(() => {
@@ -315,6 +337,7 @@ export default function DatabasePage() {
     async function runCleanup() {
         if (!plan) return
         setSubmitting(true)
+        setRestartResultMissing(false)
         try {
             const started = await startHistoryCleanup(plan.days, plan.mode)
             prevState.current = started.state
@@ -340,6 +363,12 @@ export default function DatabasePage() {
                     {t("Database.Description")}
                 </p>
             </div>
+
+            {restartResultMissing && (
+                <p className="text-destructive text-sm" role="alert">
+                    {t("Database.Restart.ResultMissing")}
+                </p>
+            )}
 
             {pollNotice() && (
                 <p className="text-destructive text-sm" role="alert">

@@ -685,7 +685,8 @@
         },
         "Restart": {
             "Title": "Restarting to compact the database",
-            "Description": "The dashboard restarts and compacts the database while starting. The result shows here when it is back."
+            "Description": "The dashboard restarts and compacts the database while starting. The result shows here when it is back.",
+            "ResultMissing": "The dashboard is back, but the result of this cleanup could not be read (the result file may be lost). The deletion and compaction may have finished; check the database usage above."
         }
     }
 }
