@@ -66,6 +66,12 @@ export interface DatabaseUsage {
     history_oldest_at: string
     /** The dashboard can restart itself (restart entry set, under systemd or in a container). */
     restart_available?: boolean
+    /**
+     * The database needs one full compaction, but an online one takes too long,
+     * so the weekly maintenance and POST /maintenance skip it: compact while
+     * restarting. Computed on every request; missing means false (older dashboards too).
+     */
+    vacuum_recommended?: boolean
     /** Present only when retention_days was passed. */
     estimate?: HistoryCleanupEstimate
     job: DatabaseCleanupJob
@@ -126,6 +132,24 @@ export function defaultVacuumMode(usage: DatabaseUsage | undefined): VacuumMode 
     if (usage?.estimate?.recommended_vacuum_mode === "restart" && usage.restart_available)
         return "restart"
     return "online"
+}
+
+/**
+ * A cleanup that deletes nothing still compacts. It is offered only when the
+ * server recommends a compaction, so the button does not run a no-op otherwise.
+ */
+export function canCompactOnly(usage: DatabaseUsage | undefined, mode: VacuumMode): boolean {
+    return usage?.vacuum_recommended === true && mode !== "none"
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** A retention that keeps every record (beyond the oldest one), for a compaction only. */
+export function compactOnlyRetentionDays(usage: DatabaseUsage, now = Date.now()): number {
+    const oldest = usage.history_oldest_at ? Date.parse(usage.history_oldest_at) : NaN
+    if (Number.isNaN(oldest)) return RETENTION_DEFAULT_DAYS
+    const age = Math.ceil(Math.max(now - oldest, 0) / DAY_MS)
+    return Math.min(Math.max(age + 1, RETENTION_MIN_DAYS), RETENTION_MAX_DAYS)
 }
 
 /** Dashboards older than this feature answer the usage request with 404. */
