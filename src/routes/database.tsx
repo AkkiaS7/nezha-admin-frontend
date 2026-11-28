@@ -181,11 +181,16 @@ export default function DatabasePage() {
         },
         [t],
     )
-    const prevState = useRef(job?.state)
+    // Only the job that was running counts (same started_at): a poll may return
+    // another job's result, e.g. right after a restart. While a restart is
+    // awaited, its own wait announces the result.
+    const prevJob = useRef<Pick<DatabaseCleanupJob, "state" | "started_at"> | undefined>(job)
     useEffect(() => {
-        const prev = prevState.current
-        prevState.current = job?.state
-        if (job && isJobRunning(prev)) announce(job)
+        const prev = prevJob.current
+        prevJob.current = job
+        if (!job || !prev || !isJobRunning(prev.state)) return
+        if (job.started_at !== prev.started_at || awaitingRestart.current !== null) return
+        announce(job)
     }, [job, announce])
 
     // A running cleanup shows the mode it was started with.
@@ -340,7 +345,7 @@ export default function DatabasePage() {
         setRestartResultMissing(false)
         try {
             const started = await startHistoryCleanup(plan.days, plan.mode)
-            prevState.current = started.state
+            prevJob.current = started
             await usage.mutate((cur) => (cur ? { ...cur, job: started } : cur), {
                 revalidate: true,
             })

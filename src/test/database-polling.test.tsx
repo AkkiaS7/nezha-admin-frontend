@@ -420,3 +420,40 @@ test("idle polls interrupted by this cleanup's result still end normally", async
     expect(screen.queryByText("Database.Restart.ResultMissing")).toBeNull()
     expect(screen.getByTestId("database-job-result")).toBeTruthy()
 })
+
+test("another job's result read straight after restarting is neither announced nor taken as this one's", async () => {
+    mocks.get.mockResolvedValueOnce(thisRestart("restarting"))
+    renderPage()
+    await tick(0)
+    expect(overlay()).toBeTruthy()
+    mocks.get.mockResolvedValue(
+        restartJob("succeeded", { started_at: OLDER_JOB, finished_at: "2000-01-01T01:00:00Z" }),
+    )
+    await tick(2000)
+    await tick(2000)
+    expect(overlay()).toBeTruthy()
+    expect(toasts.success).not.toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
+
+    mocks.get.mockResolvedValue(
+        thisRestart("succeeded", { deleted_rows: 3, finished_at: "2000-01-02T00:05:00Z" }),
+    )
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(toasts.success).toHaveBeenCalledTimes(1)
+})
+
+test("an online cleanup followed by another job's result is not announced", async () => {
+    mocks.get.mockResolvedValueOnce({
+        ...usage("deleting"),
+        job: { ...job("deleting"), vacuum_mode: "online", started_at: THIS_JOB },
+    })
+    renderPage()
+    await tick(0)
+    mocks.get.mockResolvedValue({
+        ...usage("succeeded"),
+        job: { ...job("succeeded"), vacuum_mode: "online", started_at: OLDER_JOB },
+    })
+    await tick(2000)
+    expect(toasts.success).not.toHaveBeenCalled()
+})
