@@ -523,8 +523,29 @@ test("an older dashboard without recommendations offers compacting now, not rest
     expect((screen.getByDisplayValue("online") as HTMLInputElement).checked).toBe(true)
     expect((screen.getByDisplayValue("restart") as HTMLInputElement).disabled).toBe(true)
     expect(screen.queryByTestId("database-vacuum-recommendation")).toBeNull()
+    // no duration from such dashboards: the texts leave it out
     expect(screen.getByTestId("database-vacuum-mode").textContent).toContain(
-        'Database.Mode.OnlineDetail {"duration":"Database.DurationUnknown"}',
+        "Database.Mode.OnlineDetailNoTime",
+    )
+    fireEvent.click(screen.getByText("Database.Cleanup.Run"))
+    expect(screen.getByText("Database.Confirm.ModeOnlineNoTime")).toBeTruthy()
+    fireEvent.click(screen.getByText("Database.Confirm.Next"))
+    expect(screen.getByTestId("database-confirm-impact").textContent).toBe(
+        "Database.Confirm.OnlineImpactNoTime",
+    )
+})
+
+test("a running cleanup shows the mode it was started with", () => {
+    restartAvailable = true
+    usage = {
+        data: makeUsage({
+            job: makeJob({ state: "deleting", vacuum: true, vacuum_mode: "restart" }),
+        }),
+    }
+    renderPage()
+    expect((screen.getByDisplayValue("restart") as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByTestId("database-vacuum-mode").textContent).not.toContain(
+        "Database.DurationUnknown",
     )
 })
 

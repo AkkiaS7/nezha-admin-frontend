@@ -137,7 +137,7 @@ export default function DatabasePage() {
     const recommended = defaultVacuumMode(est)
     const modeAllowed = (m: VacuumMode) =>
         m === "none" || (!vacuumBlocked && (m === "online" || restartAvailable))
-    const mode: VacuumMode =
+    const selectedMode: VacuumMode =
         modeChoice && modeAllowed(modeChoice)
             ? modeChoice
             : modeAllowed(recommended)
@@ -158,6 +158,9 @@ export default function DatabasePage() {
         else if (job.state === "failed")
             toast.error(t("Database.Cleanup.Failed"), { description: job.error })
     }, [job, t])
+
+    // A running cleanup shows the mode it was started with.
+    const mode: VacuumMode = runningMode ?? selectedMode
 
     // The dashboard restarts to compact: wait for it like after a restore. A
     // failed poll right after the deletion also means it already went down.
@@ -185,6 +188,11 @@ export default function DatabasePage() {
         return seconds && seconds > 0
             ? t("Database.Duration", { seconds })
             : t("Database.DurationUnknown")
+    }
+
+    // Older dashboards (and a running cleanup) give no duration: leave it out.
+    function withDuration(key: string, seconds: number | undefined): string {
+        return seconds && seconds > 0 ? t(key, { duration: duration(seconds) }) : t(`${key}NoTime`)
     }
 
     function estimateText(): string {
@@ -493,25 +501,20 @@ export default function DatabasePage() {
                                                         )}
                                                     <span className="text-muted-foreground block">
                                                         {m === "online"
-                                                            ? t("Database.Mode.OnlineDetail", {
-                                                                  duration: duration(
-                                                                      est?.estimate
-                                                                          ?.online_vacuum_seconds,
-                                                                  ),
-                                                              })
+                                                            ? withDuration(
+                                                                  "Database.Mode.OnlineDetail",
+                                                                  est?.estimate
+                                                                      ?.online_vacuum_seconds,
+                                                              )
                                                             : m === "restart"
                                                               ? est && !restartAvailable
                                                                   ? t(
                                                                         "Database.Mode.RestartUnavailable",
                                                                     )
-                                                                  : t(
+                                                                  : withDuration(
                                                                         "Database.Mode.RestartDetail",
-                                                                        {
-                                                                            duration: duration(
-                                                                                est?.estimate
-                                                                                    ?.restart_downtime_seconds,
-                                                                            ),
-                                                                        },
+                                                                        est?.estimate
+                                                                            ?.restart_downtime_seconds,
                                                                     )
                                                               : t("Database.Mode.NoneDetail")}
                                                     </span>
@@ -596,13 +599,15 @@ export default function DatabasePage() {
                                         </li>
                                         <li data-testid="database-confirm-mode">
                                             {plan.mode === "online"
-                                                ? t("Database.Confirm.ModeOnline", {
-                                                      duration: duration(plan.onlineSeconds),
-                                                  })
+                                                ? withDuration(
+                                                      "Database.Confirm.ModeOnline",
+                                                      plan.onlineSeconds,
+                                                  )
                                                 : plan.mode === "restart"
-                                                  ? t("Database.Confirm.ModeRestart", {
-                                                        duration: duration(plan.restartSeconds),
-                                                    })
+                                                  ? withDuration(
+                                                        "Database.Confirm.ModeRestart",
+                                                        plan.restartSeconds,
+                                                    )
                                                   : t("Database.Confirm.ModeNone")}
                                         </li>
                                     </ul>
@@ -627,17 +632,19 @@ export default function DatabasePage() {
                                         <p>{t("Database.Confirm.Irreversible")}</p>
                                         {plan.mode === "online" && (
                                             <p data-testid="database-confirm-impact">
-                                                {t("Database.Confirm.OnlineImpact", {
-                                                    duration: duration(plan.onlineSeconds),
-                                                })}
+                                                {withDuration(
+                                                    "Database.Confirm.OnlineImpact",
+                                                    plan.onlineSeconds,
+                                                )}
                                             </p>
                                         )}
                                         {plan.mode === "restart" && (
                                             <>
                                                 <p data-testid="database-confirm-impact">
-                                                    {t("Database.Confirm.RestartImpact", {
-                                                        duration: duration(plan.restartSeconds),
-                                                    })}
+                                                    {withDuration(
+                                                        "Database.Confirm.RestartImpact",
+                                                        plan.restartSeconds,
+                                                    )}
                                                 </p>
                                                 <p>{t("Database.Confirm.RestartRequirement")}</p>
                                             </>
