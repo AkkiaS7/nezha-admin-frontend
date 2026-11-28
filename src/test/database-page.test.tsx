@@ -634,64 +634,19 @@ test("the compaction notice is hidden while a cleanup runs", () => {
     expect(screen.queryByTestId("database-vacuum-recommended")).toBeNull()
 })
 
-test("compact only keeps every record and compacts while restarting", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] })
-    vi.setSystemTime(new Date("2026-11-28T12:00:00Z"))
-    usage = {
-        data: makeUsage({
-            vacuum_recommended: true,
-            restart_available: true,
-            history_oldest_at: "2026-11-01T00:00:00Z",
-        }),
-    }
+test("the notice never enables a cleanup that deletes nothing", async () => {
+    usage = { data: makeUsage({ vacuum_recommended: true, restart_available: true }) }
     vacuumRecommended = true
     restartAvailable = true
-    deletableRows = (days) => (days >= 29 ? 0 : 1000)
-    mocks.start.mockResolvedValue(makeJob({ state: "deleting", vacuum: true }))
     renderPage()
-    fireEvent.click(screen.getByText("Database.VacuumRecommended.Prepare"))
-    vi.useRealTimers()
-
-    // 27.5 days old: keep 29 days, which deletes nothing
-    expect((screen.getByRole("spinbutton") as HTMLInputElement).value).toBe("29")
-    await waitFor(() => expect(estimateKeys().some((k) => k[1] === 29)).toBe(true))
-    await waitFor(() =>
-        expect(screen.getByTestId("database-estimate").textContent).toContain(
-            "Database.Cleanup.NothingToCleanCompact",
-        ),
-    )
-    expect((screen.getByDisplayValue("restart") as HTMLInputElement).checked).toBe(true)
-
-    const button = screen.getByText("Database.Cleanup.RunCompact") as HTMLButtonElement
-    expect(button.disabled).toBe(false)
-    fireEvent.click(button)
-    expect(screen.getByText("Database.Confirm.CompactTitle")).toBeTruthy()
-    expect(screen.getByRole("alertdialog").textContent).toContain("Database.Confirm.CompactOnly")
-    expect(screen.getByRole("alertdialog").textContent).not.toContain("Database.Cleanup.Days")
-    fireEvent.click(screen.getByText("Database.Confirm.Next"))
-    expect(screen.getByRole("alertdialog").textContent).not.toContain(
-        "Database.Confirm.Irreversible",
-    )
-    expect(screen.getByTestId("database-confirm-impact").textContent).toContain(
-        "Database.Confirm.RestartImpact",
-    )
-    fireEvent.click(screen.getByText("Database.Confirm.RunCompact"))
-    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(29, "restart"))
-})
-
-test("nothing to delete without the recommendation, or without a compaction, disables the button", async () => {
-    vacuumRecommended = true
-    renderPage()
-    fireEvent.click(screen.getByDisplayValue("none"))
+    expect(screen.getByTestId("database-vacuum-recommended")).toBeTruthy()
     fireEvent.click(screen.getByDisplayValue("180"))
     await waitFor(() =>
         expect(screen.getByTestId("database-estimate").textContent).toContain(
-            "Database.Cleanup.NothingToCleanCompact",
+            "Database.Cleanup.NothingToClean",
         ),
     )
     expect((screen.getByText("Database.Cleanup.Run") as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByDisplayValue("online"))
-    expect((screen.getByText("Database.Cleanup.RunCompact") as HTMLButtonElement).disabled).toBe(
-        false,
-    )
+    // the notice is advice only: it offers no action of its own
+    expect(screen.getByTestId("database-vacuum-recommended").querySelector("button")).toBeNull()
 })

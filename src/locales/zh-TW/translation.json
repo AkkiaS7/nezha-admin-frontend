@@ -575,10 +575,9 @@
         "VacuumRecommended": {
             "Title": "建議重新啟動面板時壓縮資料庫",
             "Description": "資料庫有約 {{size}} 的閒置空間可以回收，但線上壓縮耗時較長，為避免後台卡頓，每週維護和手動維護會略過它。壓縮一次之後，後續維護會自動分批回收空間。",
-            "Restart": "建議在下方執行一次清理，壓縮方式選擇「重新啟動面板時壓縮」。不想刪除記錄時，點擊「只壓縮，不刪除記錄」。",
-            "Online": "目前環境無法自動重新啟動面板。可以在下方執行一次清理並選擇「現場壓縮」，請安排在存取較少的時段進行，壓縮期間面板沒有回應。不想刪除記錄時，點擊「只壓縮，不刪除記錄」。",
-            "NoCleanup": "服務監控歷史沒有存放在 SQLite 中，無法在此頁面壓縮資料庫。",
-            "Prepare": "只壓縮，不刪除記錄"
+            "Restart": "建議在下方執行一次清理，壓縮方式選擇「重新啟動面板時壓縮」。",
+            "Online": "目前環境無法自動重新啟動面板。可以在下方執行一次清理並選擇「現場壓縮」，請安排在存取較少的時段進行，壓縮期間面板沒有回應。",
+            "NoCleanup": "服務監控歷史沒有存放在 SQLite 中，無法在此頁面壓縮資料庫。"
         },
         "Usage": {
             "Title": "資料庫佔用",
@@ -600,7 +599,6 @@
             "ShortRetentionWeek": "保留少於 7 天時，7 天和 30 天圖表將不完整；30 天狀態列不受影響。",
             "Estimating": "正在計算可釋放的空間…",
             "NothingToClean": "沒有可清理的記錄。",
-            "NothingToCleanCompact": "沒有可刪除的記錄。選擇壓縮方式後可以只壓縮資料庫，回收約 {{size}}。",
             "Estimate": "將刪除約 {{rows}} 筆記錄，預計釋放約 {{size}}。",
             "EstimateWithSize": "將刪除約 {{rows}} 筆記錄，預計釋放約 {{size}}，壓縮後約 {{after}}。",
             "EstimateNoVacuum": "將刪除約 {{rows}} 筆記錄。不壓縮時檔案不會變小，約 {{size}} 的空間要在壓縮後才會釋放。",
@@ -612,7 +610,6 @@
             "VacuumHintUnknown": "估算失敗（原因見上方），無法得知壓縮所需的暫存磁碟空間。",
             "VacuumNoSpace": "磁碟空間不足，無法壓縮：需要約 {{required}}，目前剩餘 {{free}}。只能刪除記錄。",
             "Run": "清理",
-            "RunCompact": "壓縮",
             "Deleting": "刪除中…",
             "Vacuuming": "壓縮中…",
             "Restarting": "重新啟動中…",
@@ -641,14 +638,11 @@
         },
         "Confirm": {
             "Title": "確定清理服務監控歷史？",
-            "CompactTitle": "確定壓縮資料庫？",
-            "CompactOnly": "不刪除任何記錄，只壓縮資料庫。",
             "Next": "繼續",
             "FinalTitle": "再次確認",
             "Irreversible": "刪除的歷史無法復原。如果以後可能用到，請先備份資料庫。",
             "GoBackup": "前往備份",
             "Run": "刪除歷史",
-            "RunCompact": "壓縮資料庫",
             "ModeOnline": "現場壓縮，預計{{duration}}",
             "ModeOnlineNoTime": "現場壓縮",
             "ModeRestart": "重新啟動面板並在啟動時壓縮，預計{{duration}}無法使用",
