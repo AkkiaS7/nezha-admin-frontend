@@ -8,11 +8,15 @@ export const SettingsTab = ({ className }: { className?: string }) => {
     const { profile } = useAuth()
 
     const isAdmin = profile?.role === 0
-    const colsClass = isAdmin ? "grid-cols-3 gap-1 sm:grid-cols-8" : "grid-cols-2"
+    // Admins get nine tabs: let them wrap and grow instead of squeezing them
+    // into equal columns, where long translations overlap.
+    const listClass = isAdmin
+        ? "flex h-auto w-full flex-wrap gap-1 [&>*]:flex-auto"
+        : "grid h-auto w-full grid-cols-2"
 
     return (
         <Tabs defaultValue={window.location.pathname} className={className}>
-            <TabsList className={`grid h-auto w-full ${colsClass}`}>
+            <TabsList className={listClass}>
                 {isAdmin && (
                     <>
                         <TabsTrigger value="/dashboard/settings" asChild>
@@ -25,6 +29,9 @@ export const SettingsTab = ({ className }: { className?: string }) => {
                         </TabsTrigger>
                         <TabsTrigger value="/dashboard/settings/backup" asChild>
                             <Link to="/dashboard/settings/backup">{t("Backup.Tab")}</Link>
+                        </TabsTrigger>
+                        <TabsTrigger value="/dashboard/settings/database" asChild>
+                            <Link to="/dashboard/settings/database">{t("Database.Tab")}</Link>
                         </TabsTrigger>
                         <TabsTrigger value="/dashboard/settings/user" asChild>
                             <Link to="/dashboard/settings/user">{t("User")}</Link>

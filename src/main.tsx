@@ -33,6 +33,7 @@ import WAFPage from "./routes/waf"
 import ApiTokensPage from "./routes/api-tokens"
 import FrontendsPage from "./routes/frontends"
 import BackupPage from "./routes/backup"
+import DatabasePage from "./routes/database"
 import MCPOAuthAuthorizePage from "./routes/mcp-oauth-authorize"
 import MCPOAuthManagementPage from "./routes/mcp-oauth-management"
 
@@ -148,6 +149,10 @@ const router = createBrowserRouter([
             {
                 path: "/dashboard/settings/backup",
                 element: <BackupPage />,
+            },
+            {
+                path: "/dashboard/settings/database",
+                element: <DatabasePage />,
             },
             {
                 path: "/dashboard/settings/user",
