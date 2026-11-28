@@ -597,7 +597,7 @@
         "DurationUnknown": "an unknown time",
         "HistoryUnavailable": "Service monitoring history is not stored in SQLite (for example, TSDB is enabled), so it cannot be cleaned up here. Its retention is managed by the TSDB settings.",
         "VacuumRecommended": {
-            "Title": "Compacting while restarting the dashboard is recommended",
+            "Title": "A one-time compaction of the database is recommended",
             "Description": "About {{size}} of free space in the database can be reclaimed, but an online compaction would take long, so the weekly maintenance and manual maintenance skip it to keep the dashboard responsive. After one compaction, later maintenance reclaims space in small batches automatically.",
             "Restart": "Run a cleanup below and choose \"Compact while restarting the dashboard\".",
             "Online": "The dashboard cannot restart itself here. Run a cleanup below and choose \"Compact now\" at a quiet time: the dashboard does not respond while compacting.",
