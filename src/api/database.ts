@@ -62,6 +62,9 @@ export const RETENTION_FULL_CHART_DAYS = 30
 /** Below this the 7-day charts lose data as well. */
 export const RETENTION_WEEK_CHART_DAYS = 7
 
+/** Consecutive failed polls of a running cleanup before the page shows the error. */
+export const POLL_FAILURE_LIMIT = 3
+
 export const getDatabaseUsage = (retentionDays?: number) =>
     fetcher<DatabaseUsage>(
         FetcherMethod.GET,

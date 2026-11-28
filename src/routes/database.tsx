@@ -3,6 +3,7 @@ import {
     DATABASE_USAGE_KEY,
     DatabaseCleanupJob,
     DatabaseUsage,
+    POLL_FAILURE_LIMIT,
     RETENTION_DEFAULT_DAYS,
     RETENTION_FULL_CHART_DAYS,
     RETENTION_MAX_DAYS,
@@ -37,7 +38,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Navigate } from "react-router-dom"
 import { toast } from "sonner"
-import useSWR from "swr"
+import useSWR, { useSWRConfig } from "swr"
 
 const JOB_POLL_MS = 2000
 const ESTIMATE_DEBOUNCE_MS = 300
@@ -70,9 +71,32 @@ export default function DatabasePage() {
     const { profile, loading } = useAuth()
     const isAdmin = profile?.role === 0
 
+    // While a cleanup runs, failed polls (e.g. the database briefly locked by
+    // VACUUM) never reach SWR: the fetcher keeps the cached state, so SWR stays
+    // on its regular refresh instead of error backoff, and the failures are
+    // counted here; the page only reports them after several in a row.
+    const { cache } = useSWRConfig()
+    const failures = useRef(0)
+    const [pollError, setPollError] = useState<Error | null>(null)
     const usage = useSWR<DatabaseUsage>(
         isAdmin ? DATABASE_USAGE_KEY : null,
-        () => getDatabaseUsage(),
+        async () => {
+            try {
+                const next = await getDatabaseUsage()
+                failures.current = 0
+                setPollError(null)
+                return next
+            } catch (e) {
+                // Read SWR's cache, not render state: mutate() starts the
+                // revalidation before React re-renders with the POSTed job, and
+                // an earlier visit leaves a running job there as well.
+                const cur = cache.get(DATABASE_USAGE_KEY)?.data as DatabaseUsage | undefined
+                if (!cur || !isJobRunning(cur.job.state) || isUnsupportedError(e)) throw e
+                failures.current += 1
+                if (failures.current >= POLL_FAILURE_LIMIT) setPollError(e as Error)
+                return cur
+            }
+        },
         {
             // Poll only while a cleanup is in flight.
             refreshInterval: (data) => (isJobRunning(data?.job.state) ? JOB_POLL_MS : 0),
@@ -125,6 +149,24 @@ export default function DatabasePage() {
     const deletable = est?.estimate?.deletable_rows ?? 0
     const canClean = !!est?.estimate && deletable > 0 && !running && !submitting
 
+    // Never show a placeholder for the temporary space: say why it is missing.
+    function vacuumHint(): string {
+        if (est?.estimate) {
+            const required = formatBytes(est.estimate.vacuum_required_size)
+            if (vacuumBlocked)
+                return t("Database.Cleanup.VacuumNoSpace", {
+                    required,
+                    free: formatBytes(est.disk_free),
+                })
+            return est.disk_free > 0
+                ? t("Database.Cleanup.VacuumHint", { required, free: formatBytes(est.disk_free) })
+                : t("Database.Cleanup.VacuumHintNoFree", { required })
+        }
+        if (running || days === null) return t("Database.Cleanup.VacuumHintBase")
+        if (settled && estimate.error) return t("Database.Cleanup.VacuumHintUnknown")
+        return t("Database.Cleanup.VacuumHintPending")
+    }
+
     function openConfirm() {
         if (!est?.estimate || days === null) return
         setPlan({
@@ -167,6 +209,12 @@ export default function DatabasePage() {
                     {t("Database.Description")}
                 </p>
             </div>
+
+            {running && pollError && (
+                <p className="text-destructive text-sm" role="alert">
+                    {t("Database.Cleanup.PollFailed", { error: pollError.message })}
+                </p>
+            )}
 
             {usage.error &&
                 (isUnsupportedError(usage.error) ? (
@@ -356,24 +404,7 @@ export default function DatabasePage() {
                                         )}
                                         data-testid="database-vacuum-hint"
                                     >
-                                        {vacuumBlocked
-                                            ? t("Database.Cleanup.VacuumNoSpace", {
-                                                  required: formatBytes(
-                                                      est!.estimate!.vacuum_required_size,
-                                                  ),
-                                                  free: formatBytes(est!.disk_free),
-                                              })
-                                            : t("Database.Cleanup.VacuumHint", {
-                                                  required: est?.estimate
-                                                      ? formatBytes(
-                                                            est.estimate.vacuum_required_size,
-                                                        )
-                                                      : "-",
-                                                  free:
-                                                      data.disk_free > 0
-                                                          ? formatBytes(data.disk_free)
-                                                          : t("Database.Unknown"),
-                                              })}
+                                        {vacuumHint()}
                                     </p>
                                 </div>
 
