@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { FetcherError } from "../api/api"
 import {
     DatabaseUsage,
+    canCompactOnly,
+    compactOnlyRetentionDays,
     databaseErrorKind,
     defaultVacuumMode,
     getDatabaseUsage,
@@ -190,4 +192,29 @@ test("raw auth codes and gateway failures map to friendly error kinds", () => {
     // the server's own (localized) messages are shown as they are
     expect(databaseErrorKind(new Error("another database cleanup is in progress"))).toBeNull()
     expect(databaseErrorKind(new FetcherError("boom", 500))).toBeNull()
+})
+
+test("compact only is offered only on the server's recommendation and with a compaction", () => {
+    expect(canCompactOnly(usage({ vacuum_recommended: true }), "restart")).toBe(true)
+    expect(canCompactOnly(usage({ vacuum_recommended: true }), "online")).toBe(true)
+    expect(canCompactOnly(usage({ vacuum_recommended: true }), "none")).toBe(false)
+    expect(canCompactOnly(usage({ vacuum_recommended: false }), "restart")).toBe(false)
+    // older dashboards do not send the field
+    expect(canCompactOnly(usage(), "restart")).toBe(false)
+    expect(canCompactOnly(undefined, "restart")).toBe(false)
+})
+
+test("the compact-only retention keeps the oldest record", () => {
+    const now = Date.parse("2026-11-28T12:00:00Z")
+    expect(
+        compactOnlyRetentionDays(usage({ history_oldest_at: "2026-11-01T00:00:00Z" }), now),
+    ).toBe(29)
+    expect(
+        compactOnlyRetentionDays(usage({ history_oldest_at: "2026-11-28T11:00:00Z" }), now),
+    ).toBe(2)
+    // no history: any retention deletes nothing
+    expect(compactOnlyRetentionDays(usage({ history_oldest_at: "" }), now)).toBe(30)
+    expect(
+        compactOnlyRetentionDays(usage({ history_oldest_at: "2000-01-01T00:00:00Z" }), now),
+    ).toBe(3650)
 })
