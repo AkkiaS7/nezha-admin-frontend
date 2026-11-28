@@ -102,6 +102,7 @@ test("the job's mode falls back to the vacuum flag of older dashboards", () => {
     expect(jobVacuumMode({ ...job, vacuum: true })).toBe("online")
     expect(jobVacuumMode({ ...job, vacuum: false })).toBe("none")
     expect(jobVacuumMode({ ...job, vacuum: true, vacuum_mode: "restart" })).toBe("restart")
+    expect(jobVacuumMode({ ...job, vacuum: false, vacuum_mode: "" })).toBe("none")
     expect(isJobRunning("restarting")).toBe(true)
 })
 
