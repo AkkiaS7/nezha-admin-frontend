@@ -18,7 +18,8 @@ vi.mock("react-i18next", () => ({
     useTranslation: () => ({ t: (key: string) => key }),
     initReactI18next: { type: "3rdParty", init: () => undefined },
 }))
-vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), toasts) }))
 vi.mock("@/api/database", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/api/database")>()),
     getDatabaseUsage: mocks.get,
@@ -305,4 +306,86 @@ test("a failed poll while an online cleanup still reads as deleting says it may 
     await tick(2000)
     expect(screen.queryByRole("alert")).toBeNull()
     expect(screen.getByText("Database.Cleanup.Vacuuming")).toBeTruthy()
+})
+
+const THIS_JOB = "2000-01-02T00:00:00Z"
+const OLDER_JOB = "2000-01-01T00:00:00Z"
+const thisRestart = (state: DatabaseCleanupJob["state"], over: Partial<DatabaseCleanupJob> = {}) =>
+    restartJob(state, { started_at: THIS_JOB, ...over })
+
+test("after the restart, idle or another job's result keeps waiting for this cleanup", async () => {
+    mocks.get.mockResolvedValueOnce(thisRestart("restarting"))
+    renderPage()
+    await tick(0)
+    expect(overlay()).toBeTruthy()
+
+    // down for a while
+    mocks.get.mockImplementation(locked)
+    await tick(6000)
+    expect(overlay()).toBeTruthy()
+
+    // back, but the result is not loaded yet: no job
+    mocks.get.mockResolvedValue(usage("idle"))
+    await tick(2000)
+    await tick(2000)
+    expect(overlay()).toBeTruthy()
+    const calls = pollCalls()
+    await tick(2000)
+    expect(pollCalls()).toBe(calls + 1) // still polling although idle
+
+    // an older cleanup's result is not this one's
+    mocks.get.mockResolvedValue(
+        restartJob("succeeded", { started_at: OLDER_JOB, finished_at: "2000-01-01T01:00:00Z" }),
+    )
+    await tick(2000)
+    expect(overlay()).toBeTruthy()
+    expect(toasts.success).not.toHaveBeenCalled()
+
+    // a failure while idle is cached does not surface either
+    mocks.get.mockImplementationOnce(locked)
+    await tick(2000)
+    expect(overlay()).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+
+    // this cleanup's final state ends the wait
+    mocks.get.mockResolvedValue(
+        thisRestart("succeeded", { deleted_rows: 7, finished_at: "2000-01-02T00:05:00Z" }),
+    )
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(screen.getByTestId("database-job-result").textContent).toContain(
+        "Database.Result.RestartDone",
+    )
+    expect(toasts.success).toHaveBeenCalledTimes(1)
+    // and polling stops
+    const done = pollCalls()
+    await tick(10000)
+    expect(pollCalls()).toBe(done)
+})
+
+test("a suspected restart that was only a disconnect ends when the deletion reads again", async () => {
+    mocks.get.mockResolvedValueOnce(thisRestart("deleting"))
+    renderPage()
+    await tick(0)
+    mocks.get.mockImplementation(locked)
+    await tick(6000)
+    expect(overlay()).toBeTruthy()
+    mocks.get.mockResolvedValue(thisRestart("deleting"))
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(screen.getByText("Database.Cleanup.Deleting")).toBeTruthy()
+})
+
+test("a restart read straight through to its result is announced once", async () => {
+    mocks.get.mockResolvedValueOnce(thisRestart("restarting"))
+    renderPage()
+    await tick(0)
+    mocks.get.mockResolvedValue(
+        thisRestart("failed", { error: "VACUUM failed", finished_at: "2000-01-02T00:05:00Z" }),
+    )
+    await tick(2000)
+    await tick(2000)
+    expect(overlay()).toBeNull()
+    expect(toasts.error).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId("database-job-result").textContent).toContain("VACUUM failed")
 })
