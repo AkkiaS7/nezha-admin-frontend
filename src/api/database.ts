@@ -24,8 +24,8 @@ export interface DatabaseCleanupJob {
     state: DatabaseJobState
     retention_days: number
     vacuum: boolean
-    /** Missing on dashboards before the compaction choice: derive it from vacuum. */
-    vacuum_mode?: VacuumMode
+    /** Missing on dashboards before the compaction choice ("" for an idle job): derive it from vacuum. */
+    vacuum_mode?: VacuumMode | ""
     deleted_rows: number
     freed_size: number
     vacuum_skipped: VacuumSkipped
@@ -113,7 +113,8 @@ export function isJobRunning(state: DatabaseJobState | undefined): boolean {
 }
 
 export function jobVacuumMode(job: DatabaseCleanupJob): VacuumMode {
-    return job.vacuum_mode ?? (job.vacuum ? "online" : "none")
+    // "" from a dashboard that sends the field for a job without a mode (idle)
+    return job.vacuum_mode || (job.vacuum ? "online" : "none")
 }
 
 /**
