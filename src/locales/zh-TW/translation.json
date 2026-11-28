@@ -601,7 +601,8 @@
             "Vacuuming": "壓縮中…",
             "Started": "已開始清理",
             "Finished": "清理完成",
-            "Failed": "清理失敗"
+            "Failed": "清理失敗",
+            "PollFailed": "暫時無法取得清理狀態：{{error}}。仍在重試，清理會在面板上繼續進行。"
         },
         "Confirm": {
             "Title": "確定清理服務監控歷史？",
