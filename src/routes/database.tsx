@@ -444,6 +444,29 @@ export default function DatabasePage() {
                                     {t("Database.HistoryUnavailable")}
                                 </p>
                             )}
+                            {data.vacuum_recommended === true && !running && !restartActive && (
+                                <div
+                                    role="note"
+                                    data-testid="database-vacuum-recommended"
+                                    className="mt-3 space-y-2 rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm"
+                                >
+                                    <p className="font-medium">
+                                        {t("Database.VacuumRecommended.Title")}
+                                    </p>
+                                    <p>
+                                        {t("Database.VacuumRecommended.Description", {
+                                            size: formatBytes(data.free_pages_size),
+                                        })}
+                                    </p>
+                                    <p>
+                                        {!data.history_available
+                                            ? t("Database.VacuumRecommended.NoCleanup")
+                                            : data.restart_available
+                                              ? t("Database.VacuumRecommended.Restart")
+                                              : t("Database.VacuumRecommended.Online")}
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 

@@ -66,6 +66,12 @@ export interface DatabaseUsage {
     history_oldest_at: string
     /** The dashboard can restart itself (restart entry set, under systemd or in a container). */
     restart_available?: boolean
+    /**
+     * The database needs one full compaction, but an online one takes too long,
+     * so the weekly maintenance and POST /maintenance skip it: compact while
+     * restarting. Computed on every request; missing means false (older dashboards too).
+     */
+    vacuum_recommended?: boolean
     /** Present only when retention_days was passed. */
     estimate?: HistoryCleanupEstimate
     job: DatabaseCleanupJob

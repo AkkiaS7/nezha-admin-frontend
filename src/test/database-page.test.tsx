@@ -67,6 +67,7 @@ let deletableRows: (days: number) => number
 let diskFree: number
 let restartAvailable: boolean | undefined
 let estimateExtra: Record<string, unknown>
+let vacuumRecommended: boolean | undefined
 const usageMutate = vi.fn()
 
 beforeEach(() => {
@@ -77,6 +78,7 @@ beforeEach(() => {
     diskFree = 8 * 1024 * 1024 * 1024
     restartAvailable = undefined
     estimateExtra = {}
+    vacuumRecommended = undefined
     mocks.swr.mockImplementation((key: unknown) => {
         if (key === "/api/v1/database/usage")
             return { ...usage, mutate: usageMutate, isLoading: false }
@@ -87,6 +89,7 @@ beforeEach(() => {
                 data: makeUsage({
                     disk_free: diskFree,
                     restart_available: restartAvailable,
+                    vacuum_recommended: vacuumRecommended,
                     estimate: {
                         ...estimateExtra,
                         retention_days: days,
@@ -580,4 +583,70 @@ test("a compaction done during the restart is reported", () => {
         "Database.Result.RestartDone",
     )
     expect(screen.queryByText("Database.Restart.Title")).toBeNull()
+})
+
+test("the compaction notice is shown only when the server sets vacuum_recommended", () => {
+    renderPage()
+    expect(screen.queryByTestId("database-vacuum-recommended")).toBeNull()
+    cleanup()
+    usage = { data: makeUsage({ vacuum_recommended: false }) }
+    renderPage()
+    expect(screen.queryByTestId("database-vacuum-recommended")).toBeNull()
+})
+
+test("the compaction notice suggests a restart, or an online compaction without one", () => {
+    usage = {
+        data: makeUsage({
+            vacuum_recommended: true,
+            restart_available: true,
+            free_pages_size: 800 * 1024 * 1024,
+        }),
+    }
+    renderPage()
+    const notice = screen.getByTestId("database-vacuum-recommended")
+    expect(notice.textContent).toContain('Database.VacuumRecommended.Description {"size":"800')
+    expect(notice.textContent).toContain("Database.VacuumRecommended.Restart")
+    cleanup()
+
+    usage = { data: makeUsage({ vacuum_recommended: true, restart_available: false }) }
+    renderPage()
+    expect(screen.getByTestId("database-vacuum-recommended").textContent).toContain(
+        "Database.VacuumRecommended.Online",
+    )
+    cleanup()
+
+    // without SQLite history there is no cleanup to compact with
+    usage = { data: makeUsage({ vacuum_recommended: true, history_available: false }) }
+    renderPage()
+    const noCleanup = screen.getByTestId("database-vacuum-recommended")
+    expect(noCleanup.textContent).toContain("Database.VacuumRecommended.NoCleanup")
+    expect(screen.queryByText("Database.VacuumRecommended.Prepare")).toBeNull()
+})
+
+test("the compaction notice is hidden while a cleanup runs", () => {
+    usage = {
+        data: makeUsage({
+            vacuum_recommended: true,
+            job: makeJob({ state: "deleting", vacuum: true, vacuum_mode: "restart" }),
+        }),
+    }
+    renderPage()
+    expect(screen.queryByTestId("database-vacuum-recommended")).toBeNull()
+})
+
+test("the notice never enables a cleanup that deletes nothing", async () => {
+    usage = { data: makeUsage({ vacuum_recommended: true, restart_available: true }) }
+    vacuumRecommended = true
+    restartAvailable = true
+    renderPage()
+    expect(screen.getByTestId("database-vacuum-recommended")).toBeTruthy()
+    fireEvent.click(screen.getByDisplayValue("180"))
+    await waitFor(() =>
+        expect(screen.getByTestId("database-estimate").textContent).toContain(
+            "Database.Cleanup.NothingToClean",
+        ),
+    )
+    expect((screen.getByText("Database.Cleanup.Run") as HTMLButtonElement).disabled).toBe(true)
+    // the notice is advice only: it offers no action of its own
+    expect(screen.getByTestId("database-vacuum-recommended").querySelector("button")).toBeNull()
 })
