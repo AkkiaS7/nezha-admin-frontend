@@ -98,3 +98,18 @@ export function vacuumBlockedByDisk(usage: DatabaseUsage | undefined): boolean {
     if (!usage?.estimate || usage.disk_free <= 0) return false
     return usage.estimate.vacuum_required_size > usage.disk_free
 }
+
+/** Which friendly text replaces a raw error, or null to show the server's message. */
+export type DatabaseErrorKind = "unauthorized" | "forbidden" | "unavailable"
+
+// The server marks auth failures with fixed, untranslated codes (see useAuth);
+// gateways answer 502-504 while the dashboard restarts or is busy.
+export function databaseErrorKind(e: unknown): DatabaseErrorKind | null {
+    const message = e instanceof Error ? e.message : String(e ?? "")
+    if (message.startsWith("ApiErrorUnauthorized") || message === "Unauthorized")
+        return "unauthorized"
+    if (message.startsWith("ApiErrorForbidden")) return "forbidden"
+    if (e instanceof FetcherError && e.status >= 502 && e.status <= 504) return "unavailable"
+    if (e instanceof TypeError) return "unavailable" // fetch() network failure
+    return null
+}

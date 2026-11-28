@@ -393,3 +393,29 @@ test("without an estimate to show the hint keeps to the general warning", () => 
     fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "0" } })
     expect(hint()).toBe("Database.Cleanup.VacuumHintBase")
 })
+
+test("raw auth codes are never shown to the user", () => {
+    const base = mocks.swr.getMockImplementation()!
+    mocks.swr.mockImplementation((key: unknown) =>
+        Array.isArray(key)
+            ? { data: undefined, error: new Error("ApiErrorUnauthorized"), isLoading: false }
+            : base(key),
+    )
+    renderPage()
+    const text = screen.getByTestId("database-estimate").textContent ?? ""
+    expect(text).toContain("Database.Error.Unauthorized")
+    expect(text).not.toContain("ApiErrorUnauthorized")
+})
+
+test("a rejected start shows the friendly text for auth codes", async () => {
+    mocks.start.mockRejectedValue(new Error("ApiErrorUnauthorized"))
+    renderPage()
+    fireEvent.click(screen.getByText("Database.Cleanup.Run"))
+    fireEvent.click(screen.getByText("Database.Confirm.Next"))
+    fireEvent.click(screen.getByText("Database.Confirm.Run"))
+    await waitFor(() =>
+        expect(mocks.error).toHaveBeenCalledWith("Error", {
+            description: "Database.Error.Unauthorized",
+        }),
+    )
+})

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { FetcherError } from "../api/api"
 import {
     DatabaseUsage,
+    databaseErrorKind,
     getDatabaseUsage,
     isJobRunning,
     isUnsupportedError,
@@ -126,4 +127,16 @@ test("VACUUM is blocked only when the free disk space is known to be short", () 
     expect(vacuumBlockedByDisk(usage({ disk_free: 0, estimate }))).toBe(false)
     expect(vacuumBlockedByDisk(usage({ disk_free: 400 }))).toBe(false)
     expect(vacuumBlockedByDisk(undefined)).toBe(false)
+})
+
+test("raw auth codes and gateway failures map to friendly error kinds", () => {
+    expect(databaseErrorKind(new Error("ApiErrorUnauthorized"))).toBe("unauthorized")
+    expect(databaseErrorKind(new FetcherError("Unauthorized", 401))).toBe("unauthorized")
+    expect(databaseErrorKind(new Error("ApiErrorForbidden: scope"))).toBe("forbidden")
+    expect(databaseErrorKind(new FetcherError("HTTP 502", 502))).toBe("unavailable")
+    expect(databaseErrorKind(new FetcherError("HTTP 504", 504))).toBe("unavailable")
+    expect(databaseErrorKind(new TypeError("Failed to fetch"))).toBe("unavailable")
+    // the server's own (localized) messages are shown as they are
+    expect(databaseErrorKind(new Error("another database cleanup is in progress"))).toBeNull()
+    expect(databaseErrorKind(new FetcherError("boom", 500))).toBeNull()
 })

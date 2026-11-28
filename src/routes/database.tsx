@@ -10,6 +10,7 @@ import {
     RETENTION_MIN_DAYS,
     RETENTION_PRESETS,
     RETENTION_WEEK_CHART_DAYS,
+    databaseErrorKind,
     getDatabaseUsage,
     isJobRunning,
     isUnsupportedError,
@@ -149,6 +150,15 @@ export default function DatabasePage() {
     const deletable = est?.estimate?.deletable_rows ?? 0
     const canClean = !!est?.estimate && deletable > 0 && !running && !submitting
 
+    // Raw codes such as ApiErrorUnauthorized mean nothing to users.
+    function errorText(e: unknown): string {
+        const kind = databaseErrorKind(e)
+        if (kind === "unauthorized") return t("Database.Error.Unauthorized")
+        if (kind === "forbidden") return t("Database.Error.Forbidden")
+        if (kind === "unavailable") return t("Database.Error.Unavailable")
+        return e instanceof Error ? e.message : String(e)
+    }
+
     // Never show a placeholder for the temporary space: say why it is missing.
     function vacuumHint(): string {
         if (est?.estimate) {
@@ -192,7 +202,7 @@ export default function DatabasePage() {
             })
             toast.success(t("Database.Cleanup.Started"))
         } catch (e) {
-            toast.error(t("Error"), { description: (e as Error).message })
+            toast.error(t("Error"), { description: errorText(e) })
             void usage.mutate()
         } finally {
             setSubmitting(false)
@@ -212,7 +222,7 @@ export default function DatabasePage() {
 
             {running && pollError && (
                 <p className="text-destructive text-sm" role="alert">
-                    {t("Database.Cleanup.PollFailed", { error: pollError.message })}
+                    {t("Database.Cleanup.PollFailed", { error: errorText(pollError) })}
                 </p>
             )}
 
@@ -223,7 +233,7 @@ export default function DatabasePage() {
                     </p>
                 ) : (
                     <p className="text-destructive text-sm" role="alert">
-                        {t("Results.ErrorFetchingResource", { error: usage.error.message })}
+                        {t("Results.ErrorFetchingResource", { error: errorText(usage.error) })}
                     </p>
                 ))}
 
@@ -364,7 +374,7 @@ export default function DatabasePage() {
                                         {!est
                                             ? estimate.error
                                                 ? t("Results.ErrorFetchingResource", {
-                                                      error: estimate.error.message,
+                                                      error: errorText(estimate.error),
                                                   })
                                                 : t("Database.Cleanup.Estimating")
                                             : deletable === 0

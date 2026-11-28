@@ -648,6 +648,11 @@
             "Failed": "Last cleanup failed after deleting {{rows}} records. You can run it again.",
             "VacuumNoSpace": "Compaction was skipped because of insufficient disk space.",
             "VacuumNotRequested": "Compaction was not requested, so the file size did not change."
+        },
+        "Error": {
+            "Unauthorized": "Your sign-in could not be verified right now, possibly because the dashboard is busy compacting the database. Try again shortly; if it keeps happening, sign in again.",
+            "Forbidden": "You do not have permission for this operation.",
+            "Unavailable": "The dashboard is not responding right now (it may be restarting or busy). Try again shortly."
         }
     }
 }
